@@ -105,6 +105,61 @@ def _canon(token: str, table: dict[str, str]) -> str:
     return table.get(upper, upper)
 
 
+_PO_BOX_RE = re.compile(
+    r"\b(?:p\.?\s*o\.?\s*(?:box)?|po\s*b|pob|box)\b\s*#?\s*(?P<num>\d+)",
+    re.IGNORECASE,
+)
+
+
+def normalize_mail_address(
+    addr: Optional[str],
+    city: Optional[str] = None,
+    state: Optional[str] = None,
+    zip_code: Optional[str] = None,
+    po_box: Optional[str] = None,
+) -> str:
+    """Canonicalize an owner's mailing address into a single matching key.
+
+    Used to cluster LLCs sharing an office or PO box. PO box variants ("PO Box
+    123", "P.O. Box 123", "Box 123", "POB 123") collapse to "PO BOX 123".
+    City/state/zip are appended so that the same street number in two towns
+    doesn't merge.
+
+    Returns "" if there's not enough signal to form a cluster key (e.g., no
+    addr and no PO box).
+    """
+    street = ""
+
+    if po_box:
+        # The parcel layer sometimes splits PO boxes into PO_BOX, sometimes
+        # leaves them in MAIL_ADDR. Either way we want the same canonical form.
+        digits = re.sub(r"\D", "", str(po_box))
+        if digits:
+            street = f"PO BOX {digits}"
+
+    if not street and addr:
+        m = _PO_BOX_RE.search(addr)
+        if m:
+            street = f"PO BOX {m.group('num')}"
+        else:
+            street = normalize_address(addr)
+
+    if not street:
+        return ""
+
+    parts = [street]
+    if city:
+        parts.append(str(city).strip().upper())
+    if state:
+        parts.append(str(state).strip().upper())
+    if zip_code:
+        # Drop any +4 extension; first 5 digits is the merge unit
+        z = re.sub(r"\D", "", str(zip_code))[:5]
+        if z:
+            parts.append(z)
+    return " | ".join(parts)
+
+
 def normalize_address(raw: Optional[str]) -> str:
     """Return a canonical street address (no city/state/zip, no apt).
 

@@ -155,6 +155,19 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
         owner_norm = normalize_owner(owner_raw)
         sbl = props.get("SBL") or ""
 
+        # Mailing fields, used downstream for operator clustering.
+        mail_addr_raw = (props.get("MAIL_ADDR") or "").strip()
+        mail_city = (props.get("MAIL_CITY") or "").strip()
+        mail_state = (props.get("MAIL_STATE") or "").strip()
+        mail_zip = (props.get("MAIL_ZIP") or "").strip()
+        po_box = (props.get("PO_BOX") or "").strip()
+        # Self-mail = owner-occupied. Compare normalized strings to avoid
+        # casing/abbreviation false negatives.
+        is_self_mail = bool(
+            mail_addr_raw and normalized and
+            normalize_address(mail_addr_raw) == normalized
+        )
+
         record = {
             "parcel_id": sbl or props.get("PRINT_KEY") or props.get("OBJECTID"),
             "print_key": props.get("PRINT_KEY"),
@@ -165,6 +178,12 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
             "lng": lng,
             "owner_raw": owner_raw,
             "owner_norm": owner_norm,
+            "mail_addr": mail_addr_raw,
+            "mail_city": mail_city,
+            "mail_state": mail_state,
+            "mail_zip": mail_zip,
+            "po_box": po_box,
+            "is_self_mail": is_self_mail,
             "prop_class": props.get("PROP_CLASS"),
             "year_built": props.get("YR_BLT"),
             "geometry": geom,

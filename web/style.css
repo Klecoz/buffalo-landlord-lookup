@@ -221,6 +221,45 @@ footer .sep { margin: 0 6px; opacity: 0.5; }
 .dot.s3 { background: var(--bad); }
 .dot.s4 { background: var(--critical); border: 1px solid #fff4; }
 
+/* Leaderboard kind toggle */
+.kind-toggle {
+  display: flex;
+  gap: 0;
+  margin: 4px 0 8px;
+  background: #1f2937;
+  border-radius: 6px;
+  padding: 3px;
+  font-size: 11px;
+}
+.kind-toggle button {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 6px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kind-toggle button:hover { color: var(--fg); }
+.kind-toggle button.active {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+/* Constituent-LLC sub-list inside operator view (uses .leaderboard.llc-list) */
+.leaderboard.llc-list li {
+  grid-template-columns: 1fr auto;
+  padding: 7px 4px;
+}
+.leaderboard.llc-list .stat-num {
+  font-size: 13px;
+  color: var(--bad);
+}
+
 /* Leaderboard */
 .tabs {
   display: flex;

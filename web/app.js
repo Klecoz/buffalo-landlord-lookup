@@ -11,9 +11,11 @@ const state = {
   addressIndex: [],   // [{addr, id}, ...]
   dossiers: null,     // lazy-loaded { parcel_id: {violations, complaints} }
   meta: null,
-  topOwners: null,    // { by_properties: [...], by_open_violations: [...], ... }
+  topOwners: null,
+  topOperators: null,
   selectedId: null,
-  activeBoard: "by_open_violations", // sticky tab
+  activeBoard: "by_open_violations",
+  activeBoardKind: "operators",  // "operators" | "owners" — sticky between renders
 };
 
 // ---------- helpers ----------
@@ -274,6 +276,12 @@ function renderPortfolio(portfolio) {
     ? `<p class="empty">Also recorded as: ${portfolio.owner_variants.slice(0, 5).map(escapeHtml).join(", ")}</p>`
     : "";
 
+  const operatorCta = portfolio.operator_slug
+    ? `<button class="cta" onclick="window.openOperator('${escapeHtml(portfolio.operator_slug)}')">
+         Same mailing address as related LLCs →
+       </button>`
+    : "";
+
   const rows = portfolio.properties.map(p => `
     <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
       <td>${escapeHtml(p.addr)}</td>
@@ -298,6 +306,8 @@ function renderPortfolio(portfolio) {
         <div class="label">Violations (sum)</div>
       </div>
     </div>
+
+    ${operatorCta}
 
     <h3>Properties (sorted by concern score)</h3>
     <table class="portfolio">
@@ -327,12 +337,14 @@ const BOARDS = [
 ];
 
 function renderLeaderboards() {
-  if (!state.topOwners) {
+  const isOperators = state.activeBoardKind === "operators";
+  const data = isOperators ? state.topOperators : state.topOwners;
+  if (!data) {
     showPanel(`<p class="empty">Loading leaderboards…</p>`);
     return;
   }
   const active = BOARDS.find(b => b.key === state.activeBoard) || BOARDS[0];
-  const list = state.topOwners[active.key] || [];
+  const list = data[active.key] || [];
 
   const tabs = BOARDS.map(b =>
     `<button class="${b.key === active.key ? "active" : ""}" data-board="${b.key}">${b.label}</button>`
@@ -340,34 +352,54 @@ function renderLeaderboards() {
 
   const rows = list.map((o, i) => {
     const cls = i === 0 ? "top1" : i === 1 ? "top2" : i === 2 ? "top3" : "";
-    const sub = `${o.properties} prop${o.properties === 1 ? "" : "s"} · ${o.open} open · ${o.all_violations} all`;
+    const sub = isOperators
+      ? `${o.owners_n} LLCs · ${o.properties} props · ${o.open} open`
+      : `${o.properties} prop${o.properties === 1 ? "" : "s"} · ${o.open} open · ${o.all_violations} all`;
+    const display = isOperators ? o.label : o.display;
+    const action = isOperators
+      ? `data-op="${escapeHtml(o.slug)}"`
+      : `data-slug="${escapeHtml(o.slug)}"`;
     return `
-      <li class="${cls}" data-slug="${escapeHtml(o.slug)}">
+      <li class="${cls}" ${action}>
         <span class="rank">${i + 1}</span>
-        <span class="name">${escapeHtml(o.display)}<span class="sub">${sub}</span></span>
+        <span class="name">${escapeHtml(display)}<span class="sub">${sub}</span></span>
         <span class="stat-num">${o[active.stat]} <span class="sub" style="display:inline">${active.statLabel}</span></span>
       </li>`;
   }).join("");
 
+  const kindToggle = `
+    <div class="kind-toggle">
+      <button class="${isOperators ? "active" : ""}" data-kind="operators">Operators (mailing-address clusters)</button>
+      <button class="${!isOperators ? "active" : ""}" data-kind="owners">Owner names (raw)</button>
+    </div>`;
+
   showPanel(`
     <h2>Top Landlords</h2>
-    <p class="empty" style="margin:0 0 4px;">Public records, ranked. Excludes city, county, state, and federal owners.</p>
+    <p class="empty" style="margin:0 0 8px;">Public records, ranked. Excludes city, county, state, and federal owners.</p>
 
+    ${kindToggle}
     <div class="tabs">${tabs}</div>
 
     ${list.length === 0
-      ? `<p class="empty">No owners with non-zero count for this category.</p>`
+      ? `<p class="empty">No entries with non-zero count for this category.</p>`
       : `<ul class="leaderboard">${rows}</ul>`
     }
 
     <div class="disclaimer">
-      Owners are matched by name normalization. Properties owned by the same person under
-      different LLCs may appear separately. The 311 board is anchored to the dataset's
-      max date (the source feed has not updated since 2024-05-10).
+      ${isOperators
+        ? "Operators are inferred by clustering owners that share a mailing address — typically a real signal, but lawyers and property managers can cause false merges. Click an operator to see the constituent LLCs."
+        : "Owner-name view treats every distinct LLC as separate. Switch to Operators to see clusters that share a mailing address."}
+      The 311 board is anchored to 2024-05-10 (source feed stopped updating).
     </div>
   `);
 
-  // Wire tabs + rows
+  // Wire kind toggle, tabs, rows
+  $$("#panel .kind-toggle button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.activeBoardKind = btn.dataset.kind;
+      renderLeaderboards();
+    });
+  });
   $$("#panel .tabs button").forEach(btn => {
     btn.addEventListener("click", () => {
       state.activeBoard = btn.dataset.board;
@@ -375,6 +407,75 @@ function renderLeaderboards() {
     });
   });
   $$("#panel .leaderboard li").forEach(li => {
+    if (li.dataset.op) {
+      li.addEventListener("click", () => window.openOperator(li.dataset.op));
+    } else if (li.dataset.slug) {
+      li.addEventListener("click", () => window.openPortfolio(li.dataset.slug));
+    }
+  });
+}
+
+// ---------- operator view ----------
+window.openOperator = async function (slug) {
+  try {
+    const r = await fetch(`data/operators/${slug}.json`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const op = await r.json();
+    renderOperator(op);
+    location.hash = `#/operator/${encodeURIComponent(slug)}`;
+  } catch (e) {
+    showPanel(`<p class="error">Couldn't load that operator.</p>`);
+  }
+};
+
+function renderOperator(op) {
+  const ownersList = op.owners.map(o => `
+    <li data-slug="${escapeHtml(o.slug)}">
+      <span class="name">${escapeHtml(o.display)}<span class="sub">${o.properties} props · ${o.open} open · ${o.all_violations} all-time</span></span>
+      <span class="stat-num">${o.open}</span>
+    </li>
+  `).join("");
+
+  const propsRows = op.properties.slice(0, 200).map(p => `
+    <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
+      <td>${escapeHtml(p.addr)}</td>
+      <td class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
+      <td class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
+      <td class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : ""}</td>
+    </tr>
+  `).join("");
+
+  showPanel(`
+    <h2>Operator</h2>
+    <div class="addr">${escapeHtml(op.operator_label)}</div>
+    <p class="empty" style="margin:2px 0 12px;">Mailing address: <strong>${escapeHtml(op.mailing_address)}</strong></p>
+
+    <div class="stat-grid">
+      <div class="stat"><div class="num">${op.total_properties}</div><div class="label">Properties</div></div>
+      <div class="stat ${op.total_open_violations > 50 ? "bad" : op.total_open_violations > 10 ? "warn" : ""}">
+        <div class="num">${op.total_open_violations}</div><div class="label">Open violations</div>
+      </div>
+      <div class="stat"><div class="num">${op.total_all_violations}</div><div class="label">All-time violations</div></div>
+      <div class="stat"><div class="num">${op.total_complaints_311_12mo}</div><div class="label">311 (12mo)</div></div>
+    </div>
+
+    <h3>Constituent LLCs (${op.owners.length})</h3>
+    <ul class="leaderboard llc-list">${ownersList}</ul>
+
+    <h3>Properties (top 200 by concern)</h3>
+    <table class="portfolio">
+      <thead><tr><th>Address</th><th class="num">Open</th><th class="num">311</th><th class="num">Demo</th></tr></thead>
+      <tbody>${propsRows}</tbody>
+    </table>
+
+    <div class="disclaimer">
+      These owners share a mailing address, which often (but not always) means a single
+      operator. Click any LLC above to see it on its own. Bulk LLC ownership data is
+      not publicly available in NYS, so this is the best inference the public data allows.
+    </div>
+  `);
+
+  $$("#panel .llc-list li").forEach(li => {
     li.addEventListener("click", () => window.openPortfolio(li.dataset.slug));
   });
 }
@@ -455,14 +556,27 @@ async function loadTopOwners() {
   }
 }
 
+async function loadTopOperators() {
+  try {
+    const r = await fetch("data/top_operators.json");
+    state.topOperators = await r.json();
+  } catch (e) {
+    console.error("top operators load failed", e);
+    state.topOperators = { by_open_violations: [], by_all_violations: [], by_properties: [], by_complaints_311: [] };
+  }
+}
+
 function setupHashRouting() {
   window.addEventListener("hashchange", () => {
     const m = location.hash.match(/^#\/parcel\/(.+)/);
     const o = location.hash.match(/^#\/owner\/(.+)/);
+    const op = location.hash.match(/^#\/operator\/(.+)/);
     if (m && m[1] !== state.selectedId) {
       selectParcel(decodeURIComponent(m[1]));
     } else if (o) {
       window.openPortfolio(decodeURIComponent(o[1]));
+    } else if (op) {
+      window.openOperator(decodeURIComponent(op[1]));
     } else if (!location.hash) {
       hidePanel();
     }
@@ -484,7 +598,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initMap();
   setupSearch();
   setupHashRouting();
-  await Promise.all([loadMeta(), loadAddressIndex(), loadTopOwners()]);
+  await Promise.all([loadMeta(), loadAddressIndex(), loadTopOwners(), loadTopOperators()]);
 
   // Replay initial hash route after data load, otherwise show leaderboards.
   if (location.hash) {

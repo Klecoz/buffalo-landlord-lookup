@@ -16,12 +16,21 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+
+from normalize import normalize_mail_address
 
 HERE = Path(__file__).resolve().parent
 WEB_DATA = HERE.parent / "web" / "data"
 OWNERS_DIR = WEB_DATA / "owners"
+OPERATORS_DIR = WEB_DATA / "operators"
+
+# Operator clustering tunables — see docs/superpowers/specs/2026-05-06-llc-unmasking-design.md
+GENERIC_ADDRESS_OWNER_CAP = 30   # mailing addr w/ > N owners is treated as a service provider
+MIN_CLUSTER_OWNERS = 2           # need at least N distinct LLCs to be a cluster
+MIN_CLUSTER_PARCELS = 3          # and at least N total parcels across them
 
 
 def _slugify(name: str) -> str:
@@ -65,9 +74,117 @@ def _is_skipped_owner(owner_norm: str) -> bool:
     return any(s in owner_norm for s in _LEADERBOARD_SKIP_SUBSTRINGS)
 
 
+def _slugify_unique(label: str, used: set[str]) -> str:
+    base = _slugify(label)
+    slug = base
+    i = 2
+    while slug in used:
+        slug = f"{base}-{i}"
+        i += 1
+    used.add(slug)
+    return slug
+
+
+def _build_operator_clusters(
+    by_owner: dict[str, dict],
+) -> tuple[dict[str, dict], dict[str, str]]:
+    """Cluster owners by their primary mailing address.
+
+    Args:
+        by_owner: owner_norm -> {
+            "slug": str, "display": str,
+            "mail_keys": Counter[mail_key],   # tally across non-self-mail parcels
+            "properties": int, "open": int, "all_violations": int,
+            "complaints_311_12mo": int,
+            "props": list[dict],              # parcel records for the operator portfolio
+        }
+
+    Returns:
+        (clusters, owner_to_operator)
+        clusters: operator_slug -> { mailing_address, owners[], totals, properties[] }
+        owner_to_operator: owner_norm -> operator_slug
+    """
+    # Step 1 — pick each owner's PRIMARY mail key (most common across their non-self-mail parcels)
+    primary_mail: dict[str, str] = {}
+    for owner_norm, agg in by_owner.items():
+        keys = agg["mail_keys"]
+        if not keys:
+            continue
+        # Counter.most_common ties broken by insertion order; sort key alphabetically for determinism.
+        top_count = max(keys.values())
+        candidates = sorted(k for k, c in keys.items() if c == top_count)
+        primary_mail[owner_norm] = candidates[0]
+
+    # Step 2 — group owners by mailing key
+    by_mail: dict[str, list[str]] = defaultdict(list)
+    for owner_norm, key in primary_mail.items():
+        if key:
+            by_mail[key].append(owner_norm)
+
+    # Step 3 — apply rules
+    clusters: dict[str, dict] = {}
+    owner_to_operator: dict[str, str] = {}
+    used_slugs: set[str] = set()
+
+    for mail_key, owner_norms in by_mail.items():
+        # Rule 1: skip generic mailing addresses (lawyers, agents, managers).
+        if len(owner_norms) > GENERIC_ADDRESS_OWNER_CAP:
+            continue
+        # Inherit the leaderboard skip-list at the cluster level.
+        if any(_is_skipped_owner(o) for o in owner_norms):
+            continue
+        # Rule 3: meaningful size.
+        if len(owner_norms) < MIN_CLUSTER_OWNERS:
+            continue
+        total_parcels = sum(by_owner[o]["properties"] for o in owner_norms)
+        if total_parcels < MIN_CLUSTER_PARCELS:
+            continue
+
+        # Build cluster.
+        sorted_owners = sorted(owner_norms, key=lambda o: -by_owner[o]["properties"])
+        primary_label = by_owner[sorted_owners[0]]["display"]
+        suffix = f" (+{len(sorted_owners)-1} more LLC{'s' if len(sorted_owners) > 2 else ''})"
+        operator_label = primary_label + suffix
+
+        slug = _slugify_unique(primary_label, used_slugs)
+
+        owners_block = []
+        all_props: list[dict] = []
+        totals = {"properties": 0, "open": 0, "all_violations": 0, "complaints_311_12mo": 0}
+        for o in sorted_owners:
+            agg = by_owner[o]
+            owners_block.append({
+                "slug": agg["slug"],
+                "display": agg["display"],
+                "properties": agg["properties"],
+                "open": agg["open"],
+                "all_violations": agg["all_violations"],
+                "complaints_311_12mo": agg["complaints_311_12mo"],
+            })
+            all_props.extend(agg["props"])
+            for k in totals:
+                totals[k] += agg[k]
+            owner_to_operator[o] = slug
+
+        clusters[slug] = {
+            "operator_slug": slug,
+            "operator_label": operator_label,
+            "mailing_address": mail_key,
+            "owners": owners_block,
+            "total_properties": totals["properties"],
+            "total_open_violations": totals["open"],
+            "total_all_violations": totals["all_violations"],
+            "total_complaints_311_12mo": totals["complaints_311_12mo"],
+            "properties": sorted(all_props, key=lambda p: -p["concern_score"]),
+        }
+
+    return clusters, owner_to_operator
+
+
 def emit(joined: dict) -> dict[str, Path]:
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     OWNERS_DIR.mkdir(parents=True, exist_ok=True)
+    OPERATORS_DIR.mkdir(parents=True, exist_ok=True)
 
     parcels = joined["parcels"]
     owners = joined["owners"]
@@ -124,14 +241,16 @@ def emit(joined: dict) -> dict[str, Path]:
     # ------------------------------------------------------------------
     # owners/<slug>.json
     # ------------------------------------------------------------------
-    print(f"Emitting {len(owners):,} owner portfolios...", file=sys.stderr)
-    # Per-owner aggregates collected here so the leaderboard step that follows
-    # can rank without re-scanning parcels.
-    owner_aggregates: list[dict] = []
+    print(f"Aggregating {len(owners):,} owners...", file=sys.stderr)
+    # First pass: build per-owner aggregates AND collect each owner's mailing-address
+    # tally. We need this completed BEFORE we can compute operator clusters and write
+    # owner files (because owner files include their operator_slug).
+    by_owner: dict[str, dict] = {}
     for owner_norm, parcel_ids in owners.items():
         slug = owner_slugs[owner_norm]
         props = []
         owner_displays: dict[str, int] = {}
+        mail_keys: Counter[str] = Counter()
         portfolio_violations = 0
         portfolio_open_violations = 0
         portfolio_complaints_311 = 0
@@ -147,6 +266,15 @@ def emit(joined: dict) -> dict[str, Path]:
             if parcel["last_violation_date"]:
                 if oldest_violation is None or parcel["last_violation_date"] < oldest_violation:
                     oldest_violation = parcel["last_violation_date"]
+            # Mailing-address tally — only if NOT owner-occupied.
+            if not parcel.get("is_self_mail"):
+                mk = normalize_mail_address(
+                    parcel.get("mail_addr"), parcel.get("mail_city"),
+                    parcel.get("mail_state"), parcel.get("mail_zip"),
+                    parcel.get("po_box"),
+                )
+                if mk:
+                    mail_keys[mk] += 1
             props.append({
                 "id": parcel["parcel_id"],
                 "addr": parcel["address"],
@@ -159,28 +287,55 @@ def emit(joined: dict) -> dict[str, Path]:
                 "concern_score": parcel["concern_score"],
             })
 
-        # Pick the most-frequent display variant of the owner name as the canonical
         display = max(owner_displays.items(), key=lambda kv: kv[1])[0] if owner_displays else owner_norm
 
-        _atomic_write(OWNERS_DIR / f"{slug}.json", {
-            "owner_norm": owner_norm,
-            "owner_display": display,
-            "owner_variants": list(owner_displays.keys()),
-            "total_properties": len(props),
-            "total_violations": portfolio_violations,
-            "oldest_violation": oldest_violation,
-            "properties": sorted(props, key=lambda x: -x["concern_score"]),
-        })
-
-        owner_aggregates.append({
+        by_owner[owner_norm] = {
             "slug": slug,
             "display": display,
-            "owner_norm": owner_norm,
+            "variants": list(owner_displays.keys()),
+            "mail_keys": mail_keys,
             "properties": len(props),
             "open": portfolio_open_violations,
             "all_violations": portfolio_violations,
             "complaints_311_12mo": portfolio_complaints_311,
+            "oldest_violation": oldest_violation,
+            "props": sorted(props, key=lambda x: -x["concern_score"]),
+        }
+
+    # Build operator clusters BEFORE writing owner files so each owner gets its operator_slug.
+    print("Clustering operators by mailing address...", file=sys.stderr)
+    clusters, owner_to_operator = _build_operator_clusters(by_owner)
+    print(f"  {len(clusters):,} operator clusters formed", file=sys.stderr)
+
+    # Now write owner files (with operator_slug) and collect ranking aggregates.
+    print(f"Emitting {len(owners):,} owner portfolios...", file=sys.stderr)
+    owner_aggregates: list[dict] = []
+    for owner_norm, agg in by_owner.items():
+        operator_slug = owner_to_operator.get(owner_norm)
+        _atomic_write(OWNERS_DIR / f"{agg['slug']}.json", {
+            "owner_norm": owner_norm,
+            "owner_display": agg["display"],
+            "owner_variants": agg["variants"],
+            "total_properties": agg["properties"],
+            "total_violations": agg["all_violations"],
+            "oldest_violation": agg["oldest_violation"],
+            "operator_slug": operator_slug,
+            "properties": agg["props"],
         })
+        owner_aggregates.append({
+            "slug": agg["slug"],
+            "display": agg["display"],
+            "owner_norm": owner_norm,
+            "properties": agg["properties"],
+            "open": agg["open"],
+            "all_violations": agg["all_violations"],
+            "complaints_311_12mo": agg["complaints_311_12mo"],
+        })
+
+    # Write operator files.
+    print(f"Emitting {len(clusters):,} operator portfolios...", file=sys.stderr)
+    for slug, cluster in clusters.items():
+        _atomic_write(OPERATORS_DIR / f"{slug}.json", cluster)
 
     # ------------------------------------------------------------------
     # top_owners.json — leaderboards
@@ -201,6 +356,42 @@ def emit(joined: dict) -> dict[str, Path]:
         "by_all_violations": _top("all_violations"),
         "by_complaints_311": _top("complaints_311_12mo"),
     })
+
+    # ------------------------------------------------------------------
+    # top_operators.json — operator leaderboard
+    # ------------------------------------------------------------------
+    print("Emitting top_operators.json...", file=sys.stderr)
+    op_aggs = [
+        {
+            "slug": c["operator_slug"],
+            "label": c["operator_label"],
+            "mailing_address": c["mailing_address"],
+            "owners_n": len(c["owners"]),
+            "properties": c["total_properties"],
+            "open": c["total_open_violations"],
+            "all_violations": c["total_all_violations"],
+            "complaints_311_12mo": c["total_complaints_311_12mo"],
+        }
+        for c in clusters.values()
+    ]
+
+    def _top_op(key: str, n: int = 20) -> list[dict]:
+        ranked = sorted(op_aggs, key=lambda o: -o[key])
+        return [o for o in ranked[:n] if o[key] > 0]
+
+    _atomic_write(WEB_DATA / "top_operators.json", {
+        "by_properties": _top_op("properties"),
+        "by_open_violations": _top_op("open"),
+        "by_all_violations": _top_op("all_violations"),
+        "by_complaints_311": _top_op("complaints_311_12mo"),
+    })
+
+    # Sanity: top 5 operators by property count
+    if clusters:
+        top_clusters = sorted(clusters.values(), key=lambda c: -c["total_properties"])[:5]
+        print("\nTop 5 operators by property count (sanity check):", file=sys.stderr)
+        for c in top_clusters:
+            print(f"  {c['total_properties']:5d}  {c['operator_label']:60s}  @ {c['mailing_address']}", file=sys.stderr)
 
     # ------------------------------------------------------------------
     # address_index.json — small list for client-side search
