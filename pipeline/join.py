@@ -186,6 +186,7 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
             "is_self_mail": is_self_mail,
             "prop_class": props.get("PROP_CLASS"),
             "year_built": props.get("YR_BLT"),
+            "full_market_val": int(props.get("FULL_MARKET_VAL") or 0),
             "geometry": geom,
             # to be filled below
             "code_violations_open": 0,

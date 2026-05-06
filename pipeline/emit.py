@@ -51,6 +51,7 @@ def _atomic_write(path: Path, data: Any) -> None:
 # *normalized* owner name. Substring (in) for org variants, equality for
 # placeholders.
 _LEADERBOARD_SKIP_SUBSTRINGS = (
+    # Government — city/state/county/federal
     "city of buffalo",
     "city buffalo",
     "city of bflo",
@@ -60,10 +61,50 @@ _LEADERBOARD_SKIP_SUBSTRINGS = (
     "buffalo board of education",
     "state of new york",
     "state new york",
+    "state of ny",
+    "state ny ",                        # "state ny dept" etc.
+    "state university",                # SUNY: "State University Of New York"
+    "state teachers",                   # State Teachers College
+    "people of the state",              # "People Of The State Of NY"
+    "people of new york",
     "county of erie",
     "erie county",
     "united states of america",
     "u s a",
+    "u s government",
+    "u s postal",
+    # Quasi-public agencies & authorities
+    "buffalo urban renewal",
+    "empire state development",
+    "dormitory authority",
+    "n f t a",                         # Niagara Frontier Transportation Authority
+    "nfta",
+    "industrial development agency",
+    "housing authority",
+    # Utilities
+    "niagara mohawk",
+    "national grid",
+    "verizon new york",
+    # Major nonprofit / institutional owners that aren't landlords
+    "kaleida health",
+    "catholic health",
+    "mercy hospital",
+    "roswell park",
+    "veterans of",
+    "diocese of buffalo",
+    "salvation army",
+    "habitat for humanity",
+    "ywca",
+    "ymca",
+    "young men s christian",
+    "young women s christian",
+    # Universities/colleges (mostly institutional, not landlord)
+    "canisius college",
+    "canisius university",
+    "d youville",
+    "medaille college",
+    "medaille university",
+    "buffalo state college",
 )
 _LEADERBOARD_SKIP_EXACT = {"owner of record", "unknown", ""}
 
@@ -150,7 +191,7 @@ def _build_operator_clusters(
 
         owners_block = []
         all_props: list[dict] = []
-        totals = {"properties": 0, "open": 0, "all_violations": 0, "complaints_311_12mo": 0}
+        totals = {"properties": 0, "open": 0, "all_violations": 0, "complaints_311_12mo": 0, "total_value": 0}
         for o in sorted_owners:
             agg = by_owner[o]
             owners_block.append({
@@ -160,6 +201,7 @@ def _build_operator_clusters(
                 "open": agg["open"],
                 "all_violations": agg["all_violations"],
                 "complaints_311_12mo": agg["complaints_311_12mo"],
+                "total_value": agg["total_value"],
             })
             all_props.extend(agg["props"])
             for k in totals:
@@ -175,6 +217,7 @@ def _build_operator_clusters(
             "total_open_violations": totals["open"],
             "total_all_violations": totals["all_violations"],
             "total_complaints_311_12mo": totals["complaints_311_12mo"],
+            "total_value": totals["total_value"],
             "properties": sorted(all_props, key=lambda p: -p["concern_score"]),
         }
 
@@ -254,6 +297,7 @@ def emit(joined: dict) -> dict[str, Path]:
         portfolio_violations = 0
         portfolio_open_violations = 0
         portfolio_complaints_311 = 0
+        portfolio_value = 0
         oldest_violation = None
         for pid in parcel_ids:
             parcel = by_id.get(pid)
@@ -263,6 +307,7 @@ def emit(joined: dict) -> dict[str, Path]:
             portfolio_violations += parcel["code_violations_total"]
             portfolio_open_violations += parcel["code_violations_open"]
             portfolio_complaints_311 += parcel["complaints_311_12mo"]
+            portfolio_value += parcel.get("full_market_val", 0) or 0
             if parcel["last_violation_date"]:
                 if oldest_violation is None or parcel["last_violation_date"] < oldest_violation:
                     oldest_violation = parcel["last_violation_date"]
@@ -285,6 +330,7 @@ def emit(joined: dict) -> dict[str, Path]:
                 "complaints_311_12mo": parcel["complaints_311_12mo"],
                 "demolished": parcel["demolished"],
                 "concern_score": parcel["concern_score"],
+                "value": parcel.get("full_market_val", 0) or 0,
             })
 
         display = max(owner_displays.items(), key=lambda kv: kv[1])[0] if owner_displays else owner_norm
@@ -298,6 +344,7 @@ def emit(joined: dict) -> dict[str, Path]:
             "open": portfolio_open_violations,
             "all_violations": portfolio_violations,
             "complaints_311_12mo": portfolio_complaints_311,
+            "total_value": portfolio_value,
             "oldest_violation": oldest_violation,
             "props": sorted(props, key=lambda x: -x["concern_score"]),
         }
@@ -318,6 +365,7 @@ def emit(joined: dict) -> dict[str, Path]:
             "owner_variants": agg["variants"],
             "total_properties": agg["properties"],
             "total_violations": agg["all_violations"],
+            "total_value": agg["total_value"],
             "oldest_violation": agg["oldest_violation"],
             "operator_slug": operator_slug,
             "properties": agg["props"],
@@ -330,6 +378,7 @@ def emit(joined: dict) -> dict[str, Path]:
             "open": agg["open"],
             "all_violations": agg["all_violations"],
             "complaints_311_12mo": agg["complaints_311_12mo"],
+            "total_value": agg["total_value"],
         })
 
     # Write operator files.
@@ -346,7 +395,7 @@ def emit(joined: dict) -> dict[str, Path]:
     def _top(key: str, n: int = 20) -> list[dict]:
         ranked = sorted(eligible, key=lambda o: -o[key])
         return [
-            {k: o[k] for k in ("slug", "display", "properties", "open", "all_violations", "complaints_311_12mo")}
+            {k: o[k] for k in ("slug", "display", "properties", "open", "all_violations", "complaints_311_12mo", "total_value")}
             for o in ranked[:n] if o[key] > 0
         ]
 
@@ -355,6 +404,7 @@ def emit(joined: dict) -> dict[str, Path]:
         "by_open_violations": _top("open"),
         "by_all_violations": _top("all_violations"),
         "by_complaints_311": _top("complaints_311_12mo"),
+        "by_value": _top("total_value"),
     })
 
     # ------------------------------------------------------------------
@@ -371,6 +421,7 @@ def emit(joined: dict) -> dict[str, Path]:
             "open": c["total_open_violations"],
             "all_violations": c["total_all_violations"],
             "complaints_311_12mo": c["total_complaints_311_12mo"],
+            "total_value": c["total_value"],
         }
         for c in clusters.values()
     ]
@@ -384,6 +435,7 @@ def emit(joined: dict) -> dict[str, Path]:
         "by_open_violations": _top_op("open"),
         "by_all_violations": _top_op("all_violations"),
         "by_complaints_311": _top_op("complaints_311_12mo"),
+        "by_value": _top_op("total_value"),
     })
 
     # Sanity: top 5 operators by property count

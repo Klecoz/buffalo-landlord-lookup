@@ -21,6 +21,7 @@ from emit import (
 
 def test_skipped_substrings():
     skipped = [
+        # gov
         "city of buffalo perfecting title",
         "city of buffalo",
         "city buffalo perfecting",
@@ -32,9 +33,29 @@ def test_skipped_substrings():
         "buffalo board of education",
         "state of new york",
         "state new york dept transportation",
+        "state university of new york",
         "county of erie",
         "erie county industrial development agency",
         "united states of america",
+        # quasi-public
+        "buffalo urban renewal agency",
+        "empire state development corp",
+        "dormitory authority of",
+        "n f t a",
+        "nfta",
+        "rochester housing authority",
+        # utilities
+        "niagara mohawk power corp",
+        "national grid",
+        "verizon new york inc",
+        # nonprofits / institutional
+        "kaleida health",
+        "catholic health system",
+        "mercy hospital of buffalo",
+        "roswell park cancer institute",
+        "diocese of buffalo",
+        "ywca of niagara",
+        "ymca buffalo niagara",
     ]
     for s in skipped:
         assert _is_skipped_owner(s), f"should be skipped: {s!r}"
@@ -60,7 +81,7 @@ def test_kept_private_owners():
 
 # --- operator clustering -------------------------------------------------
 
-def _owner_agg(slug, display, mail_keys, properties, open_v=0, all_v=0, c311=0):
+def _owner_agg(slug, display, mail_keys, properties, open_v=0, all_v=0, c311=0, value=0):
     """Build the by_owner record shape that _build_operator_clusters expects."""
     return {
         "slug": slug,
@@ -71,6 +92,7 @@ def _owner_agg(slug, display, mail_keys, properties, open_v=0, all_v=0, c311=0):
         "open": open_v,
         "all_violations": all_v,
         "complaints_311_12mo": c311,
+        "total_value": value,
         "oldest_violation": None,
         "props": [{"id": f"{slug}-{i}", "concern_score": 0} for i in range(properties)],
     }
@@ -154,6 +176,22 @@ def test_cluster_below_property_threshold():
     }
     clusters, _ = _build_operator_clusters(by_owner)
     assert clusters == {}
+
+
+def test_cluster_total_value_sums_across_owners():
+    """The cluster's total_value is the sum of constituent owners' values."""
+    by_owner = {
+        "alpha llc": _owner_agg("alpha-llc", "Alpha LLC",
+                                {"PO BOX 7 | BUFFALO | NY | 14210": 5}, 5, value=1_500_000),
+        "beta llc":  _owner_agg("beta-llc", "Beta LLC",
+                                {"PO BOX 7 | BUFFALO | NY | 14210": 3}, 3, value=600_000),
+    }
+    clusters, _ = _build_operator_clusters(by_owner)
+    assert len(clusters) == 1
+    cluster = next(iter(clusters.values()))
+    assert cluster["total_value"] == 2_100_000
+    # Constituent owners section also carries per-LLC value.
+    assert {o["total_value"] for o in cluster["owners"]} == {1_500_000, 600_000}
 
 
 def test_cluster_with_government_owner_skipped():

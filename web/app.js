@@ -31,6 +31,14 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
   );
 }
+function fmtMoney(n) {
+  n = Number(n) || 0;
+  if (n === 0) return "—";
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000)     return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)         return `$${Math.round(n / 1_000)}K`;
+  return `$${n}`;
+}
 function showPanel(html) {
   $("#panel-content").innerHTML = html;
   $("#panel").classList.remove("hidden");
@@ -305,6 +313,10 @@ function renderPortfolio(portfolio) {
         <div class="num">${portfolio.total_violations}</div>
         <div class="label">Violations (sum)</div>
       </div>
+      <div class="stat">
+        <div class="num">${fmtMoney(portfolio.total_value)}</div>
+        <div class="label">Portfolio value</div>
+      </div>
     </div>
 
     ${operatorCta}
@@ -330,10 +342,11 @@ window.gotoParcel = function (id, lat, lng) {
 
 // ---------- leaderboards ----------
 const BOARDS = [
-  { key: "by_open_violations", label: "Open", stat: "open",                statLabel: "open" },
-  { key: "by_all_violations",  label: "All",  stat: "all_violations",      statLabel: "viol." },
-  { key: "by_properties",      label: "Props",stat: "properties",          statLabel: "props" },
-  { key: "by_complaints_311",  label: "311",  stat: "complaints_311_12mo", statLabel: "311" },
+  { key: "by_open_violations", label: "Open",  stat: "open",                statLabel: "open" },
+  { key: "by_all_violations",  label: "All",   stat: "all_violations",      statLabel: "viol." },
+  { key: "by_properties",      label: "Props", stat: "properties",          statLabel: "props" },
+  { key: "by_value",           label: "Value", stat: "total_value",         statLabel: "",      money: true },
+  { key: "by_complaints_311",  label: "311",   stat: "complaints_311_12mo", statLabel: "311" },
 ];
 
 function renderLeaderboards() {
@@ -353,17 +366,18 @@ function renderLeaderboards() {
   const rows = list.map((o, i) => {
     const cls = i === 0 ? "top1" : i === 1 ? "top2" : i === 2 ? "top3" : "";
     const sub = isOperators
-      ? `${o.owners_n} LLCs · ${o.properties} props · ${o.open} open`
-      : `${o.properties} prop${o.properties === 1 ? "" : "s"} · ${o.open} open · ${o.all_violations} all`;
+      ? `${o.owners_n} LLCs · ${o.properties} props · ${o.open} open · ${fmtMoney(o.total_value)}`
+      : `${o.properties} prop${o.properties === 1 ? "" : "s"} · ${o.open} open · ${fmtMoney(o.total_value)}`;
     const display = isOperators ? o.label : o.display;
     const action = isOperators
       ? `data-op="${escapeHtml(o.slug)}"`
       : `data-slug="${escapeHtml(o.slug)}"`;
+    const statValue = active.money ? fmtMoney(o[active.stat]) : o[active.stat];
     return `
       <li class="${cls}" ${action}>
         <span class="rank">${i + 1}</span>
         <span class="name">${escapeHtml(display)}<span class="sub">${sub}</span></span>
-        <span class="stat-num">${o[active.stat]} <span class="sub" style="display:inline">${active.statLabel}</span></span>
+        <span class="stat-num">${statValue}${active.statLabel ? ` <span class="sub" style="display:inline">${active.statLabel}</span>` : ""}</span>
       </li>`;
   }).join("");
 
@@ -457,6 +471,7 @@ function renderOperator(op) {
       </div>
       <div class="stat"><div class="num">${op.total_all_violations}</div><div class="label">All-time violations</div></div>
       <div class="stat"><div class="num">${op.total_complaints_311_12mo}</div><div class="label">311 (12mo)</div></div>
+      <div class="stat"><div class="num">${fmtMoney(op.total_value)}</div><div class="label">Portfolio value</div></div>
     </div>
 
     <h3>Constituent LLCs (${op.owners.length})</h3>

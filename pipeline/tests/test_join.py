@@ -35,6 +35,7 @@ def test_build_parcel_records_basic():
             "LOC_ST_NBR": "216", "LOC_STREET": "Landon",
             "PRIMARY_OWNER": "ACME PROPERTIES LLC",
             "SBL": "AAA", "PRINT_KEY": "1.1-1-1",
+            "FULL_MARKET_VAL": 175000,
         },
     ])
     parcels, by_addr = _build_parcel_records(fc)
@@ -43,6 +44,15 @@ def test_build_parcel_records_basic():
     p = by_addr["216 LANDON"]
     assert p["owner_norm"] == "acme properties llc"
     assert p["lat"] == 42.91 and p["lng"] == -78.85
+    assert p["full_market_val"] == 175000
+
+
+def test_build_parcel_records_missing_value_defaults_zero():
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "1", "LOC_STREET": "Main", "PRIMARY_OWNER": "X", "SBL": "A"},
+    ])
+    parcels, _ = _build_parcel_records(fc)
+    assert parcels[0]["full_market_val"] == 0
 
 
 def test_build_parcel_records_drops_unaddressed():
