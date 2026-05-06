@@ -37,6 +37,34 @@ def _atomic_write(path: Path, data: Any) -> None:
     tmp.replace(path)
 
 
+# Public/government owners that dominate a raw "most properties" list and
+# aren't useful as a slumlord-leaderboard signal. Match against the
+# *normalized* owner name. Substring (in) for org variants, equality for
+# placeholders.
+_LEADERBOARD_SKIP_SUBSTRINGS = (
+    "city of buffalo",
+    "city buffalo",
+    "city of bflo",
+    "city bflo",
+    "buffalo municipal",
+    "buffalo public school",
+    "buffalo board of education",
+    "state of new york",
+    "state new york",
+    "county of erie",
+    "erie county",
+    "united states of america",
+    "u s a",
+)
+_LEADERBOARD_SKIP_EXACT = {"owner of record", "unknown", ""}
+
+
+def _is_skipped_owner(owner_norm: str) -> bool:
+    if owner_norm in _LEADERBOARD_SKIP_EXACT:
+        return True
+    return any(s in owner_norm for s in _LEADERBOARD_SKIP_SUBSTRINGS)
+
+
 def emit(joined: dict) -> dict[str, Path]:
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     OWNERS_DIR.mkdir(parents=True, exist_ok=True)
@@ -97,11 +125,16 @@ def emit(joined: dict) -> dict[str, Path]:
     # owners/<slug>.json
     # ------------------------------------------------------------------
     print(f"Emitting {len(owners):,} owner portfolios...", file=sys.stderr)
+    # Per-owner aggregates collected here so the leaderboard step that follows
+    # can rank without re-scanning parcels.
+    owner_aggregates: list[dict] = []
     for owner_norm, parcel_ids in owners.items():
         slug = owner_slugs[owner_norm]
         props = []
         owner_displays: dict[str, int] = {}
         portfolio_violations = 0
+        portfolio_open_violations = 0
+        portfolio_complaints_311 = 0
         oldest_violation = None
         for pid in parcel_ids:
             parcel = by_id.get(pid)
@@ -109,6 +142,8 @@ def emit(joined: dict) -> dict[str, Path]:
                 continue
             owner_displays[parcel["owner_raw"]] = owner_displays.get(parcel["owner_raw"], 0) + 1
             portfolio_violations += parcel["code_violations_total"]
+            portfolio_open_violations += parcel["code_violations_open"]
+            portfolio_complaints_311 += parcel["complaints_311_12mo"]
             if parcel["last_violation_date"]:
                 if oldest_violation is None or parcel["last_violation_date"] < oldest_violation:
                     oldest_violation = parcel["last_violation_date"]
@@ -136,6 +171,36 @@ def emit(joined: dict) -> dict[str, Path]:
             "oldest_violation": oldest_violation,
             "properties": sorted(props, key=lambda x: -x["concern_score"]),
         })
+
+        owner_aggregates.append({
+            "slug": slug,
+            "display": display,
+            "owner_norm": owner_norm,
+            "properties": len(props),
+            "open": portfolio_open_violations,
+            "all_violations": portfolio_violations,
+            "complaints_311_12mo": portfolio_complaints_311,
+        })
+
+    # ------------------------------------------------------------------
+    # top_owners.json — leaderboards
+    # ------------------------------------------------------------------
+    print("Emitting top_owners.json...", file=sys.stderr)
+    eligible = [o for o in owner_aggregates if not _is_skipped_owner(o["owner_norm"])]
+
+    def _top(key: str, n: int = 20) -> list[dict]:
+        ranked = sorted(eligible, key=lambda o: -o[key])
+        return [
+            {k: o[k] for k in ("slug", "display", "properties", "open", "all_violations", "complaints_311_12mo")}
+            for o in ranked[:n] if o[key] > 0
+        ]
+
+    _atomic_write(WEB_DATA / "top_owners.json", {
+        "by_properties": _top("properties"),
+        "by_open_violations": _top("open"),
+        "by_all_violations": _top("all_violations"),
+        "by_complaints_311": _top("complaints_311_12mo"),
+    })
 
     # ------------------------------------------------------------------
     # address_index.json — small list for client-side search

@@ -11,7 +11,9 @@ const state = {
   addressIndex: [],   // [{addr, id}, ...]
   dossiers: null,     // lazy-loaded { parcel_id: {violations, complaints} }
   meta: null,
+  topOwners: null,    // { by_properties: [...], by_open_violations: [...], ... }
   selectedId: null,
+  activeBoard: "by_open_violations", // sticky tab
 };
 
 // ---------- helpers ----------
@@ -30,14 +32,23 @@ function escapeHtml(s) {
 function showPanel(html) {
   $("#panel-content").innerHTML = html;
   $("#panel").classList.remove("hidden");
+  $("#reopen-panel").classList.add("hidden");
 }
 function hidePanel() {
-  $("#panel").classList.add("hidden");
+  // "Close" returns to leaderboards rather than hiding the panel entirely;
+  // the small × on the leaderboard view fully hides it.
   state.selectedId = null;
   if (state.map && state.map.getLayer("parcels-selected")) {
     state.map.setFilter("parcels-selected", ["==", "id", ""]);
   }
-  if (location.hash) location.hash = "";
+  if (location.hash) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+  renderLeaderboards();
+}
+function fullyHidePanel() {
+  $("#panel").classList.add("hidden");
+  $("#reopen-panel").classList.remove("hidden");
 }
 
 async function loadDossiers() {
@@ -307,6 +318,67 @@ window.gotoParcel = function (id, lat, lng) {
   setTimeout(() => selectParcel(id), 600);
 };
 
+// ---------- leaderboards ----------
+const BOARDS = [
+  { key: "by_open_violations", label: "Open", stat: "open",                statLabel: "open" },
+  { key: "by_all_violations",  label: "All",  stat: "all_violations",      statLabel: "viol." },
+  { key: "by_properties",      label: "Props",stat: "properties",          statLabel: "props" },
+  { key: "by_complaints_311",  label: "311",  stat: "complaints_311_12mo", statLabel: "311" },
+];
+
+function renderLeaderboards() {
+  if (!state.topOwners) {
+    showPanel(`<p class="empty">Loading leaderboards…</p>`);
+    return;
+  }
+  const active = BOARDS.find(b => b.key === state.activeBoard) || BOARDS[0];
+  const list = state.topOwners[active.key] || [];
+
+  const tabs = BOARDS.map(b =>
+    `<button class="${b.key === active.key ? "active" : ""}" data-board="${b.key}">${b.label}</button>`
+  ).join("");
+
+  const rows = list.map((o, i) => {
+    const cls = i === 0 ? "top1" : i === 1 ? "top2" : i === 2 ? "top3" : "";
+    const sub = `${o.properties} prop${o.properties === 1 ? "" : "s"} · ${o.open} open · ${o.all_violations} all`;
+    return `
+      <li class="${cls}" data-slug="${escapeHtml(o.slug)}">
+        <span class="rank">${i + 1}</span>
+        <span class="name">${escapeHtml(o.display)}<span class="sub">${sub}</span></span>
+        <span class="stat-num">${o[active.stat]} <span class="sub" style="display:inline">${active.statLabel}</span></span>
+      </li>`;
+  }).join("");
+
+  showPanel(`
+    <h2>Top Landlords</h2>
+    <p class="empty" style="margin:0 0 4px;">Public records, ranked. Excludes city, county, state, and federal owners.</p>
+
+    <div class="tabs">${tabs}</div>
+
+    ${list.length === 0
+      ? `<p class="empty">No owners with non-zero count for this category.</p>`
+      : `<ul class="leaderboard">${rows}</ul>`
+    }
+
+    <div class="disclaimer">
+      Owners are matched by name normalization. Properties owned by the same person under
+      different LLCs may appear separately. The 311 board is anchored to the dataset's
+      max date (the source feed has not updated since 2024-05-10).
+    </div>
+  `);
+
+  // Wire tabs + rows
+  $$("#panel .tabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.activeBoard = btn.dataset.board;
+      renderLeaderboards();
+    });
+  });
+  $$("#panel .leaderboard li").forEach(li => {
+    li.addEventListener("click", () => window.openPortfolio(li.dataset.slug));
+  });
+}
+
 // ---------- search ----------
 function setupSearch() {
   const input = $("#search");
@@ -373,6 +445,16 @@ async function loadAddressIndex() {
   }
 }
 
+async function loadTopOwners() {
+  try {
+    const r = await fetch("data/top_owners.json");
+    state.topOwners = await r.json();
+  } catch (e) {
+    console.error("top owners load failed", e);
+    state.topOwners = { by_open_violations: [], by_all_violations: [], by_properties: [], by_complaints_311: [] };
+  }
+}
+
 function setupHashRouting() {
   window.addEventListener("hashchange", () => {
     const m = location.hash.match(/^#\/parcel\/(.+)/);
@@ -388,14 +470,26 @@ function setupHashRouting() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  $("#panel-close").addEventListener("click", hidePanel);
+  $("#panel-close").addEventListener("click", () => {
+    // If we're on the leaderboard view already, fully hide; otherwise return to leaderboards.
+    if (!state.selectedId && !location.hash) {
+      fullyHidePanel();
+    } else {
+      hidePanel();
+    }
+  });
+  $("#reopen-panel").addEventListener("click", () => {
+    renderLeaderboards();
+  });
   initMap();
   setupSearch();
   setupHashRouting();
-  await Promise.all([loadMeta(), loadAddressIndex()]);
+  await Promise.all([loadMeta(), loadAddressIndex(), loadTopOwners()]);
 
-  // Replay initial hash route after data load
+  // Replay initial hash route after data load, otherwise show leaderboards.
   if (location.hash) {
     window.dispatchEvent(new HashChangeEvent("hashchange"));
+  } else {
+    renderLeaderboards();
   }
 });
