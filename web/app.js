@@ -179,22 +179,28 @@ function initMap() {
         layout: { "visibility": "none" },
         filter: ["==", ["get", "owner_slug"], "__none__"],
       });
-      // Circle marker at each matched parcel's centroid so individual parcels
-      // are visible even at city-wide zoom where polygons are 1-2 pixels.
+      // Centroid-circle markers backed by a separate Points source — needed
+      // because a circle layer on a polygon source draws one circle per
+      // VERTEX (4 per rectangular parcel), not one per parcel. We populate
+      // this source on demand from in-memory data when the filter is applied.
+      map.addSource("highlight-points", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
       map.addLayer({
         id: "parcels-highlight-circle",
         type: "circle",
-        source: "parcels",
+        source: "highlight-points",
         paint: {
           "circle-color": "#fb8500",
           "circle-radius": [
             "interpolate", ["linear"], ["zoom"],
-            10, 3,
-            13, 4,
-            15, 5,
-            17, 0,   // fade out the dot at high zoom — fill takes over
+            10, 4,
+            13, 6,
+            15, 7,
+            17, 0,   // fade out at high zoom — polygon fill takes over
           ],
-          "circle-stroke-width": 1,
+          "circle-stroke-width": 1.5,
           "circle-stroke-color": "#fff",
           "circle-stroke-opacity": [
             "interpolate", ["linear"], ["zoom"],
@@ -203,7 +209,6 @@ function initMap() {
           ],
         },
         layout: { "visibility": "none" },
-        filter: ["==", ["get", "owner_slug"], "__none__"],
       });
 
       // Selected parcel highlight
@@ -419,31 +424,31 @@ window.gotoParcel = function (id, lat, lng) {
 };
 
 // ---------- map filter (highlight an owner/operator's parcels) ----------
-function _highlightedBbox(kind, slug) {
-  // Returns [[minLng, minLat], [maxLng, maxLat]] from in-memory data.
-  let pts = [];
+function _highlightedPoints(kind, slug) {
+  // Returns [{lat,lng}, ...] from in-memory data — used for both bbox + the
+  // centroid Points source that backs the highlight-circle layer.
   if (kind === "owner") {
-    pts = state.addressIndex
-      .filter(a => a.owner_slug === slug && a.lat && a.lng)
-      .map(a => [a.lng, a.lat]);
-  } else if (kind === "operator") {
-    // The operator portfolio JSON is loaded by openOperator and holds lat/lng.
-    // We stash it on state.lastOperator for bbox lookup; fall back to scanning
-    // the address_index by joining owner_slugs in the operator (loaded ad-hoc).
+    return state.addressIndex.filter(a => a.owner_slug === slug && a.lat && a.lng);
+  }
+  if (kind === "operator") {
     const op = state.lastOperator;
     if (op && op.operator_slug === slug) {
-      pts = (op.properties || []).filter(p => p.lat && p.lng).map(p => [p.lng, p.lat]);
+      return (op.properties || []).filter(p => p.lat && p.lng);
     }
   }
-  if (pts.length === 0) return null;
-  let minLng = pts[0][0], maxLng = pts[0][0], minLat = pts[0][1], maxLat = pts[0][1];
-  for (const [lng, lat] of pts) {
-    if (lng < minLng) minLng = lng;
-    if (lng > maxLng) maxLng = lng;
-    if (lat < minLat) minLat = lat;
-    if (lat > maxLat) maxLat = lat;
+  return [];
+}
+
+function _bboxOf(points) {
+  if (!points.length) return null;
+  let minLng = points[0].lng, maxLng = points[0].lng, minLat = points[0].lat, maxLat = points[0].lat;
+  for (const p of points) {
+    if (p.lng < minLng) minLng = p.lng;
+    if (p.lng > maxLng) maxLng = p.lng;
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
   }
-  return { bounds: [[minLng, minLat], [maxLng, maxLat]], count: pts.length };
+  return [[minLng, minLat], [maxLng, maxLat]];
 }
 
 function applyMapFilter(kind, slug, label) {
@@ -455,21 +460,28 @@ function applyMapFilter(kind, slug, label) {
   // Show dim backdrop over all parcels.
   state.map.setLayoutProperty("parcels-dim-fill", "visibility", "visible");
 
-  // Show the bright highlight overlay only for matched parcels.
+  // Polygon-fill highlight (visible at higher zoom).
   state.map.setFilter("parcels-highlight-fill", expr);
-  state.map.setFilter("parcels-highlight-circle", expr);
   state.map.setLayoutProperty("parcels-highlight-fill", "visibility", "visible");
+
+  // Centroid Points source for the circle markers — one per parcel.
+  const points = _highlightedPoints(kind, slug);
+  const fc = {
+    type: "FeatureCollection",
+    features: points.map(p => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+      properties: {},
+    })),
+  };
+  state.map.getSource("highlight-points").setData(fc);
   state.map.setLayoutProperty("parcels-highlight-circle", "visibility", "visible");
 
-  // Existing colorful base layer stays unfiltered — its zoom-aware opacity
-  // means it's invisible at low zoom and only adds detail when zoomed in,
-  // which is fine.
+  state.mapFilter = { kind, slug, label, count: points.length };
 
-  const bbox = _highlightedBbox(kind, slug);
-  state.mapFilter = { kind, slug, label, count: bbox?.count ?? 0 };
-
-  if (bbox) {
-    state.map.fitBounds(bbox.bounds, { padding: 60, maxZoom: 17, duration: 700 });
+  const bounds = _bboxOf(points);
+  if (bounds) {
+    state.map.fitBounds(bounds, { padding: 60, maxZoom: 17, duration: 700 });
   }
   updateFilterChip();
 }
@@ -481,7 +493,7 @@ function clearMapFilter() {
     state.map.setLayoutProperty("parcels-highlight-fill", "visibility", "none");
     state.map.setLayoutProperty("parcels-highlight-circle", "visibility", "none");
     state.map.setFilter("parcels-highlight-fill", ["==", ["get", "owner_slug"], "__none__"]);
-    state.map.setFilter("parcels-highlight-circle", ["==", ["get", "owner_slug"], "__none__"]);
+    state.map.getSource("highlight-points").setData({ type: "FeatureCollection", features: [] });
   }
   state.mapFilter = null;
   updateFilterChip();
