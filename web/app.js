@@ -167,23 +167,41 @@ function initMap() {
       });
 
       // Highlighted-parcel overlay — drawn on top of parcels-fill / dim layer.
-      // Constant high opacity so the matched parcels stand out at every zoom.
+      // Solid accent color so matched parcels stand out at every zoom.
       map.addLayer({
         id: "parcels-highlight-fill",
         type: "fill",
         source: "parcels",
         paint: {
-          "fill-color": colorExpr,
+          "fill-color": "#fb8500",
           "fill-opacity": 0.95,
         },
         layout: { "visibility": "none" },
         filter: ["==", ["get", "owner_slug"], "__none__"],
       });
+      // Circle marker at each matched parcel's centroid so individual parcels
+      // are visible even at city-wide zoom where polygons are 1-2 pixels.
       map.addLayer({
-        id: "parcels-highlight-outline",
-        type: "line",
+        id: "parcels-highlight-circle",
+        type: "circle",
         source: "parcels",
-        paint: { "line-color": "#fff", "line-width": 1.5, "line-opacity": 0.7 },
+        paint: {
+          "circle-color": "#fb8500",
+          "circle-radius": [
+            "interpolate", ["linear"], ["zoom"],
+            10, 3,
+            13, 4,
+            15, 5,
+            17, 0,   // fade out the dot at high zoom — fill takes over
+          ],
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#fff",
+          "circle-stroke-opacity": [
+            "interpolate", ["linear"], ["zoom"],
+            13, 0.9,
+            17, 0,
+          ],
+        },
         layout: { "visibility": "none" },
         filter: ["==", ["get", "owner_slug"], "__none__"],
       });
@@ -439,9 +457,9 @@ function applyMapFilter(kind, slug, label) {
 
   // Show the bright highlight overlay only for matched parcels.
   state.map.setFilter("parcels-highlight-fill", expr);
-  state.map.setFilter("parcels-highlight-outline", expr);
+  state.map.setFilter("parcels-highlight-circle", expr);
   state.map.setLayoutProperty("parcels-highlight-fill", "visibility", "visible");
-  state.map.setLayoutProperty("parcels-highlight-outline", "visibility", "visible");
+  state.map.setLayoutProperty("parcels-highlight-circle", "visibility", "visible");
 
   // Existing colorful base layer stays unfiltered — its zoom-aware opacity
   // means it's invisible at low zoom and only adds detail when zoomed in,
@@ -461,10 +479,9 @@ function clearMapFilter() {
   if (state.map.getLayer("parcels-highlight-fill")) {
     state.map.setLayoutProperty("parcels-dim-fill", "visibility", "none");
     state.map.setLayoutProperty("parcels-highlight-fill", "visibility", "none");
-    state.map.setLayoutProperty("parcels-highlight-outline", "visibility", "none");
-    // Reset the highlight filter so re-show starts clean.
+    state.map.setLayoutProperty("parcels-highlight-circle", "visibility", "none");
     state.map.setFilter("parcels-highlight-fill", ["==", ["get", "owner_slug"], "__none__"]);
-    state.map.setFilter("parcels-highlight-outline", ["==", ["get", "owner_slug"], "__none__"]);
+    state.map.setFilter("parcels-highlight-circle", ["==", ["get", "owner_slug"], "__none__"]);
   }
   state.mapFilter = null;
   updateFilterChip();
