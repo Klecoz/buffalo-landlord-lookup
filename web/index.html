@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Is My Landlord a Slumlord? — Buffalo Landlord Lookup</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Is My Landlord a Slumlord?</h1>
+    <p class="tagline">Buffalo, NY — public records lookup</p>
+  </header>
+
+  <div id="search-row">
+    <input
+      type="search"
+      id="search"
+      placeholder="Enter your Buffalo address (e.g., 123 Elmwood Ave)"
+      autocomplete="off"
+    />
+    <ul id="search-results"></ul>
+  </div>
+
+  <div id="map"></div>
+
+  <aside id="panel" class="hidden">
+    <button id="panel-close" aria-label="Close">&times;</button>
+    <div id="panel-content"></div>
+  </aside>
+
+  <div id="legend" class="legend">
+    <strong>Concern score</strong>
+    <div class="legend-row"><span class="dot s0"></span> 0 (clean)</div>
+    <div class="legend-row"><span class="dot s1"></span> 1–4</div>
+    <div class="legend-row"><span class="dot s2"></span> 5–10</div>
+    <div class="legend-row"><span class="dot s3"></span> 11+</div>
+    <div class="legend-row"><span class="dot s4"></span> demolished</div>
+  </div>
+
+  <footer>
+    <span id="meta-info">Loading data…</span>
+    <span class="sep"> · </span>
+    <span>Sources: data.buffalony.gov, NYS GIS Clearinghouse</span>
+    <span class="sep"> · </span>
+    <span>Research tool. Not legal advice.</span>
+  </footer>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

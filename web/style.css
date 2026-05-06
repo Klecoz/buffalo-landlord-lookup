@@ -1,0 +1,234 @@
+:root {
+  --bg: #0e1116;
+  --panel-bg: #161b22;
+  --fg: #c9d1d9;
+  --muted: #8b949e;
+  --accent: #fb8500;
+  --good: #2ea043;
+  --warn: #d29922;
+  --bad: #f85149;
+  --critical: #b62324;
+  --border: #30363d;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  height: 100vh;
+  overflow: hidden;
+}
+
+header {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 14px 18px 10px;
+  background: linear-gradient(180deg, rgba(14,17,22,0.95), rgba(14,17,22,0));
+  z-index: 20;
+  pointer-events: none;
+}
+header h1 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  color: white;
+  pointer-events: auto;
+}
+header .tagline {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  pointer-events: auto;
+}
+
+#search-row {
+  position: absolute;
+  top: 70px; left: 18px;
+  width: 360px;
+  z-index: 25;
+}
+#search {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 15px;
+  background: var(--panel-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+#search:focus { border-color: var(--accent); }
+#search-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: none;
+}
+#search-results.open { display: block; }
+#search-results li {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+#search-results li:last-child { border-bottom: none; }
+#search-results li:hover, #search-results li.active { background: #1f2937; }
+
+#map {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 30px;
+  background: #0a0d12;
+}
+
+#panel {
+  position: absolute;
+  top: 0; right: 0;
+  width: 420px; max-width: 90vw;
+  height: calc(100% - 30px);
+  background: var(--panel-bg);
+  border-left: 1px solid var(--border);
+  z-index: 30;
+  overflow-y: auto;
+  padding: 18px 22px 24px;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.4);
+  transition: transform 0.18s ease;
+}
+#panel.hidden { transform: translateX(110%); }
+#panel-close {
+  position: absolute; top: 8px; right: 12px;
+  background: none; border: none;
+  color: var(--muted); font-size: 28px;
+  cursor: pointer; line-height: 1;
+}
+#panel-close:hover { color: var(--fg); }
+#panel h2 { margin: 8px 0 6px; font-size: 18px; }
+#panel h3 { margin: 18px 0 6px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+#panel .addr { color: var(--accent); font-size: 16px; margin-bottom: 4px; }
+#panel .owner { color: var(--fg); margin-bottom: 12px; word-wrap: break-word; }
+#panel ul.violations, #panel ul.complaints {
+  list-style: none; padding: 0; margin: 0;
+}
+#panel ul.violations li, #panel ul.complaints li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+#panel ul.violations li:last-child, #panel ul.complaints li:last-child { border-bottom: none; }
+#panel ul.violations .date, #panel ul.complaints .date { color: var(--muted); font-size: 12px; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 14px 0 4px;
+}
+.stat {
+  background: #1f2937;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.stat .num { font-size: 22px; font-weight: 600; color: white; }
+.stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.stat.bad .num { color: var(--bad); }
+.stat.warn .num { color: var(--warn); }
+
+button.cta {
+  background: var(--accent);
+  color: black;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 12px;
+}
+button.cta:hover { filter: brightness(1.1); }
+button.cta:disabled { opacity: 0.4; cursor: not-allowed; }
+
+table.portfolio {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+table.portfolio th {
+  text-align: left;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 4px;
+}
+table.portfolio td {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+table.portfolio tr:hover td { background: #1f2937; cursor: pointer; }
+table.portfolio td.num { text-align: right; }
+table.portfolio td.num.warn { color: var(--warn); }
+table.portfolio td.num.bad { color: var(--bad); font-weight: 600; }
+
+.disclaimer {
+  margin-top: 18px;
+  padding: 10px 12px;
+  background: #2d2410;
+  border-left: 3px solid var(--warn);
+  font-size: 12px;
+  color: var(--muted);
+  border-radius: 0 4px 4px 0;
+}
+
+footer {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 30px;
+  padding: 6px 14px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  z-index: 20;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+footer .sep { margin: 0 6px; opacity: 0.5; }
+
+.legend {
+  position: absolute;
+  bottom: 42px; left: 18px;
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  z-index: 20;
+}
+.legend strong { display: block; margin-bottom: 6px; font-size: 11px; text-transform: uppercase; color: var(--muted); }
+.legend .legend-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.legend .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.dot.s0 { background: #475569; }
+.dot.s1 { background: #facc15; }
+.dot.s2 { background: #f97316; }
+.dot.s3 { background: var(--bad); }
+.dot.s4 { background: var(--critical); border: 1px solid #fff4; }
+
+.empty {
+  color: var(--muted); font-size: 13px; padding: 8px 0;
+}
+.error {
+  background: #2d1010;
+  border-left: 3px solid var(--bad);
+  padding: 10px 12px;
+  border-radius: 0 4px 4px 0;
+  margin-top: 10px;
+  font-size: 13px;
+}
