@@ -31,6 +31,7 @@ The pipeline writes a `meta.json` with row counts and refresh date. The footer o
 ## Limitations (read these)
 
 - **Owner aggregation is string-matching only.** "ACME PROPERTIES LLC" and "Acme Properties, L.L.C." merge. "John Smith" and "John A Smith" don't. Properties owned by the same person under shell LLCs with distinct names will appear separately. Bulk LLC unmasking via NYS DOS isn't available (the 2026 LLC Transparency Act exempts domestic LLCs).
+- **The 311 dataset (`whkc-e5vr`) stopped updating in May 2024.** The 12-month complaint window is anchored to the dataset's max date, not today. Code violations and parcels are current.
 - **The tool never says "X is a slumlord."** It shows facts; readers form a view. The page title is a question.
 - **Not legal advice.** Research tool only.
 

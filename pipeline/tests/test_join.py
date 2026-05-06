@@ -8,7 +8,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from join import (
     _build_parcel_records,
     _compute_concern_score,
-    _is_housing_311,
     _join_311,
     _join_demolitions,
     _join_violations,
@@ -76,43 +75,27 @@ def test_join_violations_aggregates_open_total_and_date():
     assert p["last_violation_date"].startswith("2026-01-01")
 
 
-def test_is_housing_311_filter():
-    yes_cases = [
-        {"subject": "No Heat", "reason": "", "type": ""},
-        {"subject": "", "reason": "Rodents in basement", "type": ""},
-        {"subject": "Housing", "reason": "", "type": ""},
-        {"subject": "", "reason": "", "type": "Lead Paint Inspection"},
-    ]
-    no_cases = [
-        {"subject": "Pothole", "reason": "Road damage", "type": ""},
-        {"subject": "Tree Removal", "reason": "", "type": ""},
-        {"subject": "", "reason": "", "type": ""},
-    ]
-    for r in yes_cases:
-        assert _is_housing_311(r), f"should match: {r}"
-    for r in no_cases:
-        assert not _is_housing_311(r), f"should NOT match: {r}"
-
-
-def test_join_311_filters_by_type_and_window():
+def test_join_311_window_anchored_on_max_date():
+    """The 12-month window is anchored to the dataset's MAX open_date so a
+    stale dataset still reports something in `complaints_311_12mo`.
+    """
     fc = _parcel_fc([
         {"LOC_ST_NBR": "100", "LOC_STREET": "Main", "PRIMARY_OWNER": "X", "SBL": "AAA"},
     ])
     parcels, by_addr = _build_parcel_records(fc)
     requests = [
-        # housing-relevant, in window
-        {"subject": "No Heat", "address_number": "100", "address_line_1": "Main",
-         "open_date": "2026-04-01T00:00:00"},
-        # housing-relevant, OUT of window (older than 1 year from 2026-05-05)
-        {"subject": "Rodents", "address_number": "100", "address_line_1": "Main",
-         "open_date": "2024-04-01T00:00:00"},
-        # NOT housing
-        {"subject": "Pothole", "address_number": "100", "address_line_1": "Main",
-         "open_date": "2026-04-01T00:00:00"},
+        # max date is 2024-05-10; anchor 12 months back -> 2023-05-10
+        {"subject": "DPIS", "address_number": "100", "address_line_1": "Main",
+         "open_date": "2024-05-10T00:00:00"},  # in window
+        {"subject": "DPIS", "address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-09-01T00:00:00"},  # in window
+        {"subject": "DPIS", "address_number": "100", "address_line_1": "Main",
+         "open_date": "2022-01-01T00:00:00"},  # OUT of window
     ]
-    matched = _join_311(by_addr, requests)
-    assert matched == 1
-    assert by_addr["100 MAIN"]["complaints_311_12mo"] == 1
+    matched, max_date = _join_311(by_addr, requests)
+    assert matched == 2
+    assert max_date.startswith("2024-05-10")
+    assert by_addr["100 MAIN"]["complaints_311_12mo"] == 2
 
 
 def test_join_demolitions_flags_parcel():

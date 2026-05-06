@@ -322,7 +322,7 @@ function setupSearch() {
       results.innerHTML = `<li class="empty">No matches</li>`;
     } else {
       results.innerHTML = matches.map(m =>
-        `<li data-id="${escapeHtml(m.id)}">${escapeHtml(m.addr)}</li>`
+        `<li data-id="${escapeHtml(m.id)}" data-lat="${m.lat ?? ''}" data-lng="${m.lng ?? ''}">${escapeHtml(m.addr)}</li>`
       ).join("");
     }
     results.classList.add("open");
@@ -333,7 +333,14 @@ function setupSearch() {
     if (!li || !li.dataset.id) return;
     input.value = li.textContent;
     results.classList.remove("open");
-    selectParcel(li.dataset.id);
+    const lat = parseFloat(li.dataset.lat), lng = parseFloat(li.dataset.lng);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      state.map.flyTo({ center: [lng, lat], zoom: 18 });
+      // Wait for the fly + tile load before trying to read the rendered feature
+      state.map.once("idle", () => selectParcel(li.dataset.id));
+    } else {
+      selectParcel(li.dataset.id);
+    }
   });
 
   document.addEventListener("click", (e) => {
@@ -347,8 +354,10 @@ async function loadMeta() {
     const r = await fetch("data/meta.json");
     state.meta = await r.json();
     const date = (state.meta.generated_at || "").slice(0, 10);
+    const c311 = (state.meta.complaints_311_max_date || "").slice(0, 10);
+    const c311Note = c311 ? ` · 311 data through ${c311}` : "";
     $("#meta-info").textContent =
-      `Refreshed ${date} · ${state.meta.parcels.toLocaleString()} parcels · ${state.meta.owners.toLocaleString()} owners`;
+      `Refreshed ${date} · ${state.meta.parcels.toLocaleString()} parcels · ${state.meta.owners.toLocaleString()} owners${c311Note}`;
   } catch {
     $("#meta-info").textContent = "Refresh date unknown";
   }

@@ -142,7 +142,12 @@ def emit(joined: dict) -> dict[str, Path]:
     # ------------------------------------------------------------------
     print("Emitting address_index.json...", file=sys.stderr)
     index = [
-        {"addr": p["address"], "id": p["parcel_id"]}
+        {
+            "addr": p["address"],
+            "id": p["parcel_id"],
+            "lat": p["lat"],
+            "lng": p["lng"],
+        }
         for p in parcels if p["address"] and p["parcel_id"]
     ]
     index.sort(key=lambda x: x["addr"])

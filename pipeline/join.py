@@ -216,14 +216,29 @@ def _join_violations(by_addr: dict[str, dict], violations: list[dict]) -> int:
     return matched
 
 
-def _join_311(by_addr: dict[str, dict], requests_311: list[dict]) -> int:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
-    cutoff_iso = cutoff.isoformat()
+def _join_311(by_addr: dict[str, dict], requests_311: list[dict]) -> tuple[int, str]:
+    """Match each 311 record to a parcel by normalized address.
+
+    The dataset's "last 12 months" window is computed relative to the dataset's
+    max open_date — not today — because the source feed stopped refreshing
+    in 2024-05. Returns (matched_count, max_date_iso) so the meta record can
+    disclose freshness.
+    """
+    # Pre-pass: find the dataset's max date to anchor the 12-month window
+    max_date = ""
+    for r in requests_311:
+        d = r.get("open_date") or ""
+        if d > max_date:
+            max_date = d
+    if max_date:
+        anchor = datetime.fromisoformat(max_date.replace("Z", "+00:00"))
+        cutoff_iso = (anchor - timedelta(days=365)).isoformat()[:19]
+    else:
+        cutoff_iso = ""
+
     matched = 0
     for r in requests_311:
-        if not _is_housing_311(r):
-            continue
-        # Address from address_number + address_line_1
+        # All rows are housing-related by API filter; no client-side filter.
         num = r.get("address_number") or ""
         line = r.get("address_line_1") or ""
         full = f"{num} {line}".strip() if num else line
@@ -232,17 +247,16 @@ def _join_311(by_addr: dict[str, dict], requests_311: list[dict]) -> int:
         if not parcel:
             continue
         opened = r.get("open_date") or ""
-        if opened and opened >= cutoff_iso[:19]:
+        if cutoff_iso and opened and opened >= cutoff_iso:
             parcel["complaints_311_12mo"] += 1
             matched += 1
-        # keep slim record (limit to 25 most recent later)
         parcel["complaints"].append({
             "date": opened,
             "subject": r.get("subject"),
             "reason": r.get("reason"),
             "type": r.get("type"),
         })
-    return matched
+    return matched, max_date
 
 
 def _join_demolitions(by_addr: dict[str, dict], demos: list[dict]) -> int:
@@ -282,8 +296,8 @@ def join_all() -> dict:
 
     print("Joining 311 housing complaints...", file=sys.stderr)
     requests_311 = _load_json(RAW / "service_requests_311.json")
-    c_matched = _join_311(by_addr, requests_311)
-    print(f"  matched {c_matched:,}/{len(requests_311):,}", file=sys.stderr)
+    c_matched, c_max_date = _join_311(by_addr, requests_311)
+    print(f"  matched {c_matched:,}/{len(requests_311):,} (max date {c_max_date[:10]})", file=sys.stderr)
 
     print("Joining demolitions...", file=sys.stderr)
     demos = _load_json(RAW / "demolitions.json")
@@ -320,6 +334,7 @@ def join_all() -> dict:
         "violations_matched": v_matched,
         "complaints_311_total": len(requests_311),
         "complaints_311_matched": c_matched,
+        "complaints_311_max_date": c_max_date,
         "demolitions_total": len(demos),
         "demolitions_matched": d_matched,
         "owners": len(owners),

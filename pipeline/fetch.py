@@ -104,12 +104,16 @@ def fetch_code_violations() -> Path:
     return out
 
 
-def fetch_311_housing(months_back: int = 18) -> Path:
-    """311 requests filed in the last N months. Type filter happens in join.py."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30 * months_back)
-    cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
-    where = f"open_date >= '{cutoff_iso}'"
-    print(f"Fetching 311 service requests since {cutoff_iso[:10]}...", file=sys.stderr)
+def fetch_311_housing() -> Path:
+    """Housing-related 311 service requests.
+
+    Filter at the API level by subject = DPIS (Department of Permits &
+    Inspection Services) or BMHA (Buffalo Municipal Housing Authority).
+    Note: this dataset stopped updating in 2024-05; see meta.json for
+    `complaints_311_max_date` so the UI can disclose freshness.
+    """
+    where = "subject in('DPIS','Buffalo Municipal Housing Authority')"
+    print("Fetching 311 housing requests (DPIS + BMHA)...", file=sys.stderr)
     rows = _socrata("whkc-e5vr", where=where)
     out = RAW / "service_requests_311.json"
     _atomic_write_json(out, rows)
