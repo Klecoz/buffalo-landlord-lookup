@@ -40,6 +40,30 @@ function fmtMoney(n) {
   if (n >= 1_000)         return `$${Math.round(n / 1_000)}K`;
   return `$${n}`;
 }
+function _copyLinkBtnHtml() {
+  return `<button class="copy-link-btn" onclick="window.copyCurrentUrl(this)" title="Copy a shareable link to this view">Copy link</button>`;
+}
+
+window.copyCurrentUrl = function (btn) {
+  const url = location.href;
+  const flash = (text, klass) => {
+    const orig = btn.textContent;
+    btn.textContent = text;
+    btn.classList.add(klass);
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.classList.remove(klass);
+    }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url)
+      .then(() => flash("Copied!", "copied"))
+      .catch(() => flash("Press ⌘C", "copied"));
+  } else {
+    flash("Press ⌘C", "copied");
+  }
+};
+
 function showPanel(html) {
   $("#panel-content").innerHTML = html;
   $("#panel").classList.remove("hidden");
@@ -55,11 +79,10 @@ function hidePanel() {
   // "Close" returns to leaderboards rather than hiding the panel entirely;
   // the small × on the leaderboard view fully hides it.
   state.selectedId = null;
+  state.lastPortfolio = null;
+  state.lastOperator = null;
   if (state.map && state.map.getLayer("parcels-selected")) {
     state.map.setFilter("parcels-selected", ["==", "id", ""]);
-  }
-  if (location.hash) {
-    history.replaceState(null, "", location.pathname + location.search);
   }
   renderLeaderboards();
 }
@@ -333,7 +356,7 @@ function renderDossier(props, dossier) {
   `);
 }
 
-window.openPortfolio = async function (slug) {
+window.openPortfolio = async function (slug, opts = {}) {
   try {
     const r = await fetch(`data/owners/${slug}.json`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -341,8 +364,14 @@ window.openPortfolio = async function (slug) {
     portfolio._slug = slug;  // attach slug for the highlight toggle
     state.lastPortfolio = portfolio;
     state.lastOperator = null;
+    if (opts.highlight) {
+      applyMapFilter("owner", slug, portfolio.owner_display || slug);
+    }
     renderPortfolio(portfolio);
-    location.hash = `#/owner/${encodeURIComponent(slug)}`;
+    const target = `#/owner/${encodeURIComponent(slug)}${opts.highlight ? "/highlight" : ""}`;
+    if (location.hash !== target) {
+      history.replaceState(null, "", target);
+    }
   } catch (e) {
     showPanel(`<p class="error">Couldn't load that owner's portfolio.</p>`);
   }
@@ -381,9 +410,17 @@ function renderPortfolio(portfolio) {
     </tr>
   `).join("");
 
+  const operatorHint = portfolio.operator_confidence
+    ? `<p class="evidence">Part of a <strong>${escapeHtml(portfolio.operator_confidence)}-confidence</strong> operator cluster.</p>`
+    : "";
+
   showPanel(`
-    <h2>Owner Portfolio</h2>
+    <div class="panel-head">
+      <h2>Owner Portfolio</h2>
+      ${_copyLinkBtnHtml()}
+    </div>
     <div class="addr">${escapeHtml(portfolio.owner_display)}</div>
+    ${operatorHint}
     ${variants}
 
     <div class="stat-grid">
@@ -497,6 +534,11 @@ function clearMapFilter() {
   }
   state.mapFilter = null;
   updateFilterChip();
+  // Strip /highlight suffix from URL if present, leaving the parent route intact.
+  const m = location.hash.match(/^(#\/(?:owner|operator)\/[^/]+)\/highlight$/);
+  if (m) {
+    history.replaceState(null, "", m[1]);
+  }
 }
 
 function updateFilterChip() {
@@ -512,10 +554,16 @@ function updateFilterChip() {
 }
 
 window.toggleMapHighlight = function (kind, slug, label) {
-  if (state.mapFilter && state.mapFilter.kind === kind && state.mapFilter.slug === slug) {
-    clearMapFilter();
-  } else {
+  const turningOn = !(state.mapFilter && state.mapFilter.kind === kind && state.mapFilter.slug === slug);
+  if (turningOn) {
     applyMapFilter(kind, slug, label);
+  } else {
+    clearMapFilter();
+  }
+  // Sync URL: add or strip /highlight suffix on the current owner/operator route.
+  const target = `#/${kind}/${encodeURIComponent(slug)}${turningOn ? "/highlight" : ""}`;
+  if (location.hash !== target) {
+    history.replaceState(null, "", target);
   }
   // Re-render whichever panel is showing so the toggle reflects the new state.
   if (state.lastOperator) {
@@ -534,6 +582,13 @@ const BOARDS = [
   { key: "by_complaints_311",  label: "311",   stat: "complaints_311_12mo", statLabel: "311" },
 ];
 
+function _syncLeaderboardHash() {
+  const target = `#/top/${state.activeBoard}/${state.activeBoardKind}`;
+  if (location.hash !== target) {
+    history.replaceState(null, "", target);
+  }
+}
+
 function renderLeaderboards() {
   const isOperators = state.activeBoardKind === "operators";
   const data = isOperators ? state.topOperators : state.topOwners;
@@ -541,6 +596,8 @@ function renderLeaderboards() {
     showPanel(`<p class="empty">Loading leaderboards…</p>`);
     return;
   }
+  // Sync hash to current tab/kind so "Copy link" reflects the view.
+  _syncLeaderboardHash();
   const active = BOARDS.find(b => b.key === state.activeBoard) || BOARDS[0];
   const list = data[active.key] || [];
 
@@ -558,10 +615,13 @@ function renderLeaderboards() {
       ? `data-op="${escapeHtml(o.slug)}"`
       : `data-slug="${escapeHtml(o.slug)}"`;
     const statValue = active.money ? fmtMoney(o[active.stat]) : o[active.stat];
+    const confDot = (isOperators && o.confidence)
+      ? `<span class="conf-dot conf-${escapeHtml(o.confidence)}" title="${escapeHtml(o.evidence || "")}"></span>`
+      : "";
     return `
       <li class="${cls}" ${action}>
         <span class="rank">${i + 1}</span>
-        <span class="name">${escapeHtml(display)}<span class="sub">${sub}</span></span>
+        <span class="name">${confDot}${escapeHtml(display)}<span class="sub">${sub}</span></span>
         <span class="stat-num">${statValue}${active.statLabel ? ` <span class="sub" style="display:inline">${active.statLabel}</span>` : ""}</span>
       </li>`;
   }).join("");
@@ -573,7 +633,10 @@ function renderLeaderboards() {
     </div>`;
 
   showPanel(`
-    <h2>Top Landlords</h2>
+    <div class="panel-head">
+      <h2>Top Landlords</h2>
+      ${_copyLinkBtnHtml()}
+    </div>
     <p class="empty" style="margin:0 0 8px;">Public records, ranked. Excludes city, county, state, and federal owners.</p>
 
     ${kindToggle}
@@ -596,12 +659,14 @@ function renderLeaderboards() {
   $$("#panel .kind-toggle button").forEach(btn => {
     btn.addEventListener("click", () => {
       state.activeBoardKind = btn.dataset.kind;
+      _syncLeaderboardHash();
       renderLeaderboards();
     });
   });
   $$("#panel .tabs button").forEach(btn => {
     btn.addEventListener("click", () => {
       state.activeBoard = btn.dataset.board;
+      _syncLeaderboardHash();
       renderLeaderboards();
     });
   });
@@ -615,15 +680,23 @@ function renderLeaderboards() {
 }
 
 // ---------- operator view ----------
-window.openOperator = async function (slug) {
+window.openOperator = async function (slug, opts = {}) {
   try {
     const r = await fetch(`data/operators/${slug}.json`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const op = await r.json();
     state.lastOperator = op;
     state.lastPortfolio = null;
+    if (opts.highlight) {
+      // applyMapFilter for operator kind reads state.lastOperator, so it must
+      // be set above first.
+      applyMapFilter("operator", slug, op.operator_label || slug);
+    }
     renderOperator(op);
-    location.hash = `#/operator/${encodeURIComponent(slug)}`;
+    const target = `#/operator/${encodeURIComponent(slug)}${opts.highlight ? "/highlight" : ""}`;
+    if (location.hash !== target) {
+      history.replaceState(null, "", target);
+    }
   } catch (e) {
     showPanel(`<p class="error">Couldn't load that operator.</p>`);
   }
@@ -640,12 +713,33 @@ function renderOperator(op) {
        ${isHighlighted ? "✓ Highlighted on map" : "Highlight on map"}
      </button>`;
 
-  const ownersList = op.owners.map(o => `
-    <li data-slug="${escapeHtml(o.slug)}">
-      <span class="name">${escapeHtml(o.display)}<span class="sub">${o.properties} props · ${o.open} open · ${o.all_violations} all-time</span></span>
-      <span class="stat-num">${o.open}</span>
-    </li>
-  `).join("");
+  const confBadge = op.confidence
+    ? `<span class="conf-badge conf-${escapeHtml(op.confidence)}">${escapeHtml(op.confidence)}-confidence cluster</span>`
+    : "";
+  const evidenceLine = op.evidence
+    ? `<p class="evidence">${escapeHtml(op.evidence)}</p>`
+    : "";
+
+  // Render owner_groups when present (collapses person-name variants), else
+  // fall back to the raw owners list so old data still works.
+  const ownerBySlug = Object.fromEntries((op.owners || []).map(o => [o.slug, o]));
+  const groups = (op.owner_groups && op.owner_groups.length)
+    ? op.owner_groups
+    : (op.owners || []).map(o => ({
+        canonical: o.display, variants: [], slugs: [o.slug], property_count: o.properties,
+      }));
+  const ownersList = groups.map(g => {
+    const totalOpen = g.slugs.reduce((s, sl) => s + (ownerBySlug[sl]?.open || 0), 0);
+    const totalAll = g.slugs.reduce((s, sl) => s + (ownerBySlug[sl]?.all_violations || 0), 0);
+    const variantHint = (g.variants && g.variants.length)
+      ? ` <span class="sub" style="display:inline">also: ${g.variants.map(escapeHtml).join(", ")}</span>`
+      : "";
+    return `
+      <li data-slug="${escapeHtml(g.slugs[0] || "")}">
+        <span class="name">${escapeHtml(g.canonical)}${variantHint}<span class="sub">${g.property_count} props · ${totalOpen} open · ${totalAll} all-time</span></span>
+        <span class="stat-num">${totalOpen}</span>
+      </li>`;
+  }).join("");
 
   const propsRows = op.properties.slice(0, 200).map(p => `
     <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
@@ -657,8 +751,13 @@ function renderOperator(op) {
   `).join("");
 
   showPanel(`
-    <h2>Operator</h2>
+    <div class="panel-head">
+      <h2>Operator</h2>
+      ${_copyLinkBtnHtml()}
+    </div>
     <div class="addr">${escapeHtml(op.operator_label)}</div>
+    ${confBadge}
+    ${evidenceLine}
     <p class="empty" style="margin:2px 0 12px;">Mailing address: <strong>${escapeHtml(op.mailing_address)}</strong></p>
 
     <div class="stat-grid">
@@ -780,21 +879,34 @@ async function loadTopOperators() {
   }
 }
 
+function applyHashRoute() {
+  const hash = location.hash;
+  let m;
+  if ((m = hash.match(/^#\/parcel\/(.+)$/))) {
+    const id = decodeURIComponent(m[1]);
+    if (id !== state.selectedId) selectParcel(id);
+  } else if ((m = hash.match(/^#\/owner\/([^/]+)(\/highlight)?$/))) {
+    const slug = decodeURIComponent(m[1]);
+    window.openPortfolio(slug, { highlight: !!m[2] });
+  } else if ((m = hash.match(/^#\/operator\/([^/]+)(\/highlight)?$/))) {
+    const slug = decodeURIComponent(m[1]);
+    window.openOperator(slug, { highlight: !!m[2] });
+  } else if ((m = hash.match(/^#\/top\/([^/]+)\/([^/]+)$/))) {
+    const board = m[1];
+    const kind = m[2];
+    if (BOARDS.find(b => b.key === board)) state.activeBoard = board;
+    if (kind === "owners" || kind === "operators") state.activeBoardKind = kind;
+    state.selectedId = null;
+    state.lastPortfolio = null;
+    state.lastOperator = null;
+    renderLeaderboards();
+  } else if (!hash) {
+    hidePanel();
+  }
+}
+
 function setupHashRouting() {
-  window.addEventListener("hashchange", () => {
-    const m = location.hash.match(/^#\/parcel\/(.+)/);
-    const o = location.hash.match(/^#\/owner\/(.+)/);
-    const op = location.hash.match(/^#\/operator\/(.+)/);
-    if (m && m[1] !== state.selectedId) {
-      selectParcel(decodeURIComponent(m[1]));
-    } else if (o) {
-      window.openPortfolio(decodeURIComponent(o[1]));
-    } else if (op) {
-      window.openOperator(decodeURIComponent(op[1]));
-    } else if (!location.hash) {
-      hidePanel();
-    }
-  });
+  window.addEventListener("hashchange", applyHashRoute);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -817,7 +929,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Replay initial hash route after data load, otherwise show leaderboards.
   if (location.hash) {
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    applyHashRoute();
   } else {
     renderLeaderboards();
   }
