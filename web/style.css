@@ -348,6 +348,39 @@ footer .sep { margin: 0 6px; opacity: 0.5; }
 #reopen-panel:hover { filter: brightness(1.1); }
 #reopen-panel.hidden { display: none; }
 
+/* Map filter chip */
+#filter-chip {
+  position: absolute;
+  top: 70px;
+  left: calc(18px + 360px + 12px);   /* just to the right of the search box */
+  z-index: 25;
+  background: var(--panel-bg);
+  color: var(--fg);
+  border: 1px solid var(--accent);
+  padding: 8px 12px 8px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  max-width: 380px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#filter-chip:hover { background: #1f2937; }
+#filter-chip.hidden { display: none; }
+#filter-chip .clear { color: var(--accent); margin-left: 8px; font-weight: 700; }
+#filter-chip .count { color: var(--muted); font-weight: 400; }
+
+/* "Highlight on map" toggle button — uses .cta and gains .toggled when active */
+button.cta.toggled {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+button.cta.toggled:hover { background: rgba(251,133,0,0.08); }
+
 .empty {
   color: var(--muted); font-size: 13px; padding: 8px 0;
 }

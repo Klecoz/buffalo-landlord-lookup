@@ -250,39 +250,8 @@ def emit(joined: dict) -> dict[str, Path]:
     by_id: dict[Any, dict] = {p["parcel_id"]: p for p in parcels if p["parcel_id"]}
 
     # ------------------------------------------------------------------
-    # properties.geojson
-    # ------------------------------------------------------------------
-    print("Emitting properties.geojson...", file=sys.stderr)
-    features = []
-    for p in parcels:
-        if not p.get("geometry"):
-            continue
-        slug = owner_slugs.get(p["owner_norm"], "")
-        portfolio_size = len(owners.get(p["owner_norm"], []))
-        features.append({
-            "type": "Feature",
-            "geometry": p["geometry"],
-            "properties": {
-                "id": p["parcel_id"],
-                "addr": p["address"],
-                "owner": p["owner_raw"],
-                "owner_slug": slug,
-                "portfolio_n": portfolio_size,
-                "violations_open": p["code_violations_open"],
-                "violations_total": p["code_violations_total"],
-                "complaints_311_12mo": p["complaints_311_12mo"],
-                "demolished": p["demolished"],
-                "concern_score": p["concern_score"],
-                "last_violation": p["last_violation_date"],
-            },
-        })
-    _atomic_write(WEB_DATA / "properties.geojson", {
-        "type": "FeatureCollection",
-        "features": features,
-    })
-
-    # ------------------------------------------------------------------
-    # owners/<slug>.json
+    # owners/<slug>.json — aggregates first, geojson + files emitted after
+    # operator clustering so each artifact carries operator_slug.
     # ------------------------------------------------------------------
     print(f"Aggregating {len(owners):,} owners...", file=sys.stderr)
     # First pass: build per-owner aggregates AND collect each owner's mailing-address
@@ -353,6 +322,40 @@ def emit(joined: dict) -> dict[str, Path]:
     print("Clustering operators by mailing address...", file=sys.stderr)
     clusters, owner_to_operator = _build_operator_clusters(by_owner)
     print(f"  {len(clusters):,} operator clusters formed", file=sys.stderr)
+
+    # ------------------------------------------------------------------
+    # properties.geojson — emitted now so each feature carries operator_slug
+    # for the map-filter feature.
+    # ------------------------------------------------------------------
+    print("Emitting properties.geojson...", file=sys.stderr)
+    features = []
+    for p in parcels:
+        if not p.get("geometry"):
+            continue
+        slug = owner_slugs.get(p["owner_norm"], "")
+        portfolio_size = len(owners.get(p["owner_norm"], []))
+        features.append({
+            "type": "Feature",
+            "geometry": p["geometry"],
+            "properties": {
+                "id": p["parcel_id"],
+                "addr": p["address"],
+                "owner": p["owner_raw"],
+                "owner_slug": slug,
+                "operator_slug": owner_to_operator.get(p["owner_norm"]),
+                "portfolio_n": portfolio_size,
+                "violations_open": p["code_violations_open"],
+                "violations_total": p["code_violations_total"],
+                "complaints_311_12mo": p["complaints_311_12mo"],
+                "demolished": p["demolished"],
+                "concern_score": p["concern_score"],
+                "last_violation": p["last_violation_date"],
+            },
+        })
+    _atomic_write(WEB_DATA / "properties.geojson", {
+        "type": "FeatureCollection",
+        "features": features,
+    })
 
     # Now write owner files (with operator_slug) and collect ranking aggregates.
     print(f"Emitting {len(owners):,} owner portfolios...", file=sys.stderr)
@@ -455,6 +458,7 @@ def emit(joined: dict) -> dict[str, Path]:
             "id": p["parcel_id"],
             "lat": p["lat"],
             "lng": p["lng"],
+            "owner_slug": owner_slugs.get(p["owner_norm"]),
         }
         for p in parcels if p["address"] and p["parcel_id"]
     ]

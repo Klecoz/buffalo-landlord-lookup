@@ -16,6 +16,7 @@ const state = {
   selectedId: null,
   activeBoard: "by_open_violations",
   activeBoardKind: "operators",  // "operators" | "owners" — sticky between renders
+  mapFilter: null,               // { kind: "owner"|"operator", slug, label, count } | null
 };
 
 // ---------- helpers ----------
@@ -111,6 +112,24 @@ function initMap() {
         [">=", ["get", "concern_score"], 1], "#facc15",
         "#475569",
       ];
+
+      // Dim backdrop drawn beneath the colorful layer; toggled on with map-filter.
+      map.addLayer({
+        id: "parcels-dim-fill",
+        type: "fill",
+        source: "parcels",
+        paint: {
+          "fill-color": "#1f2937",
+          "fill-opacity": [
+            "interpolate", ["linear"], ["zoom"],
+            13, 0,
+            15, 0.55,
+            18, 0.7,
+          ],
+        },
+        layout: { "visibility": "none" },
+        filter: ["==", "$type", "Polygon"],
+      });
 
       // Polygon fill (subtle, only at high zoom)
       map.addLayer({
@@ -272,6 +291,9 @@ window.openPortfolio = async function (slug) {
     const r = await fetch(`data/owners/${slug}.json`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const portfolio = await r.json();
+    portfolio._slug = slug;  // attach slug for the highlight toggle
+    state.lastPortfolio = portfolio;
+    state.lastOperator = null;
     renderPortfolio(portfolio);
     location.hash = `#/owner/${encodeURIComponent(slug)}`;
   } catch (e) {
@@ -287,6 +309,17 @@ function renderPortfolio(portfolio) {
   const operatorCta = portfolio.operator_slug
     ? `<button class="cta" onclick="window.openOperator('${escapeHtml(portfolio.operator_slug)}')">
          Same mailing address as related LLCs →
+       </button>`
+    : "";
+
+  const ownerSlug = portfolio._slug;
+  const isHighlighted = state.mapFilter
+    && state.mapFilter.kind === "owner"
+    && state.mapFilter.slug === ownerSlug;
+  const highlightBtn = ownerSlug
+    ? `<button class="cta ${isHighlighted ? "toggled" : ""}"
+              onclick="window.toggleMapHighlight('owner', '${escapeHtml(ownerSlug)}', ${JSON.stringify(portfolio.owner_display)})">
+         ${isHighlighted ? "✓ Highlighted on map" : "Highlight on map"}
        </button>`
     : "";
 
@@ -320,6 +353,7 @@ function renderPortfolio(portfolio) {
     </div>
 
     ${operatorCta}
+    ${highlightBtn}
 
     <h3>Properties (sorted by concern score)</h3>
     <table class="portfolio">
@@ -338,6 +372,93 @@ function renderPortfolio(portfolio) {
 window.gotoParcel = function (id, lat, lng) {
   if (lat && lng) state.map.flyTo({ center: [lng, lat], zoom: 18 });
   setTimeout(() => selectParcel(id), 600);
+};
+
+// ---------- map filter (highlight an owner/operator's parcels) ----------
+function _highlightedBbox(kind, slug) {
+  // Returns [[minLng, minLat], [maxLng, maxLat]] from in-memory data.
+  let pts = [];
+  if (kind === "owner") {
+    pts = state.addressIndex
+      .filter(a => a.owner_slug === slug && a.lat && a.lng)
+      .map(a => [a.lng, a.lat]);
+  } else if (kind === "operator") {
+    // The operator portfolio JSON is loaded by openOperator and holds lat/lng.
+    // We stash it on state.lastOperator for bbox lookup; fall back to scanning
+    // the address_index by joining owner_slugs in the operator (loaded ad-hoc).
+    const op = state.lastOperator;
+    if (op && op.operator_slug === slug) {
+      pts = (op.properties || []).filter(p => p.lat && p.lng).map(p => [p.lng, p.lat]);
+    }
+  }
+  if (pts.length === 0) return null;
+  let minLng = pts[0][0], maxLng = pts[0][0], minLat = pts[0][1], maxLat = pts[0][1];
+  for (const [lng, lat] of pts) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return { bounds: [[minLng, minLat], [maxLng, maxLat]], count: pts.length };
+}
+
+function applyMapFilter(kind, slug, label) {
+  if (!state.map || !state.map.getLayer("parcels-fill")) return;
+  const expr = kind === "owner"
+    ? ["==", ["get", "owner_slug"], slug]
+    : ["==", ["get", "operator_slug"], slug];
+  state.map.setFilter("parcels-fill", expr);
+  state.map.setFilter("parcels-outline", expr);
+  state.map.setLayoutProperty("parcels-dim-fill", "visibility", "visible");
+
+  const bbox = _highlightedBbox(kind, slug);
+  state.mapFilter = { kind, slug, label, count: bbox?.count ?? 0 };
+
+  if (bbox) {
+    state.map.fitBounds(bbox.bounds, { padding: 60, maxZoom: 17, duration: 700 });
+  }
+  updateFilterChip();
+  // Re-render the active panel so the toggle button reflects current state.
+  if (state.selectedId) {
+    // dossier showing — leave it
+  }
+}
+
+function clearMapFilter() {
+  if (!state.map) return;
+  if (state.map.getLayer("parcels-fill")) {
+    state.map.setFilter("parcels-fill", ["==", "$type", "Polygon"]);
+    state.map.setFilter("parcels-outline", ["==", "$type", "Polygon"]);
+    state.map.setLayoutProperty("parcels-dim-fill", "visibility", "none");
+  }
+  state.mapFilter = null;
+  updateFilterChip();
+}
+
+function updateFilterChip() {
+  const chip = $("#filter-chip");
+  if (!state.mapFilter) {
+    chip.classList.add("hidden");
+    chip.innerHTML = "";
+    return;
+  }
+  const { label, count } = state.mapFilter;
+  chip.innerHTML = `Showing only <strong>${escapeHtml(label)}</strong> <span class="count">· ${count} parcel${count === 1 ? "" : "s"}</span> <span class="clear">✕ Clear</span>`;
+  chip.classList.remove("hidden");
+}
+
+window.toggleMapHighlight = function (kind, slug, label) {
+  if (state.mapFilter && state.mapFilter.kind === kind && state.mapFilter.slug === slug) {
+    clearMapFilter();
+  } else {
+    applyMapFilter(kind, slug, label);
+  }
+  // Re-render whichever panel is showing so the toggle reflects the new state.
+  if (state.lastOperator) {
+    renderOperator(state.lastOperator);
+  } else if (state.lastPortfolio) {
+    renderPortfolio(state.lastPortfolio);
+  }
 };
 
 // ---------- leaderboards ----------
@@ -435,6 +556,8 @@ window.openOperator = async function (slug) {
     const r = await fetch(`data/operators/${slug}.json`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const op = await r.json();
+    state.lastOperator = op;
+    state.lastPortfolio = null;
     renderOperator(op);
     location.hash = `#/operator/${encodeURIComponent(slug)}`;
   } catch (e) {
@@ -443,6 +566,14 @@ window.openOperator = async function (slug) {
 };
 
 function renderOperator(op) {
+  const isHighlighted = state.mapFilter
+    && state.mapFilter.kind === "operator"
+    && state.mapFilter.slug === op.operator_slug;
+  const highlightBtn = `<button class="cta ${isHighlighted ? "toggled" : ""}"
+            onclick="window.toggleMapHighlight('operator', '${escapeHtml(op.operator_slug)}', ${JSON.stringify(op.operator_label)})">
+       ${isHighlighted ? "✓ Highlighted on map" : "Highlight on map"}
+     </button>`;
+
   const ownersList = op.owners.map(o => `
     <li data-slug="${escapeHtml(o.slug)}">
       <span class="name">${escapeHtml(o.display)}<span class="sub">${o.properties} props · ${o.open} open · ${o.all_violations} all-time</span></span>
@@ -473,6 +604,8 @@ function renderOperator(op) {
       <div class="stat"><div class="num">${op.total_complaints_311_12mo}</div><div class="label">311 (12mo)</div></div>
       <div class="stat"><div class="num">${fmtMoney(op.total_value)}</div><div class="label">Portfolio value</div></div>
     </div>
+
+    ${highlightBtn}
 
     <h3>Constituent LLCs (${op.owners.length})</h3>
     <ul class="leaderboard llc-list">${ownersList}</ul>
@@ -599,6 +732,7 @@ function setupHashRouting() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  $("#filter-chip").addEventListener("click", clearMapFilter);
   $("#panel-close").addEventListener("click", () => {
     // If we're on the leaderboard view already, fully hide; otherwise return to leaderboards.
     if (!state.selectedId && !location.hash) {
