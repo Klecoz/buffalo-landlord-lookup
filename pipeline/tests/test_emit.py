@@ -15,7 +15,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from emit import (
     _build_operator_clusters,
     _is_skipped_owner,
-    GENERIC_ADDRESS_OWNER_CAP,
 )
 
 
@@ -108,7 +107,7 @@ def test_cluster_three_llcs_share_po_box():
         "smith mgmt llc":      _owner_agg("smith-mgmt-llc", "Smith Mgmt LLC",
                                           {"PO BOX 1 | AMHERST | NY | 14226": 5}, 5, open_v=8),
     }
-    clusters, mapping = _build_operator_clusters(by_owner)
+    clusters, mapping, _ = _build_operator_clusters(by_owner)
     assert len(clusters) == 1
     cluster = next(iter(clusters.values()))
     assert cluster["total_properties"] == 87
@@ -125,16 +124,23 @@ def test_cluster_three_llcs_share_po_box():
 
 
 def test_skip_generic_mailing_address():
-    """A mailing address shared by > GENERIC_ADDRESS_OWNER_CAP owners is treated
-    as a service provider and never seeds a cluster.
+    """A street mailing address shared by many unrelated owners (no shared
+    name stem) is classified as an agent address and never seeds a cluster.
     """
     lawyer_mail = "100 LAW ST | BUFFALO | NY | 14202"
+    surnames = [
+        "smith", "jones", "doe", "nguyen", "kim", "patel", "garcia", "lee",
+        "brown", "davis", "wilson", "moore", "taylor", "anderson", "thomas",
+        "jackson", "white", "harris", "martin", "thompson", "lewis", "walker",
+        "hall", "allen", "young", "king", "wright", "scott", "green", "baker",
+        "adams", "nelson", "carter", "mitchell", "perez",
+    ]
     by_owner = {
-        f"unrelated llc {i}": _owner_agg(f"unrelated-{i}", f"Unrelated {i} LLC",
-                                         {lawyer_mail: 1}, 1)
-        for i in range(GENERIC_ADDRESS_OWNER_CAP + 5)
+        f"{s} llc": _owner_agg(f"{s}-llc", f"{s.title()} LLC",
+                               {lawyer_mail: 1}, 1)
+        for s in surnames
     }
-    clusters, mapping = _build_operator_clusters(by_owner)
+    clusters, mapping, _ = _build_operator_clusters(by_owner)
     assert clusters == {}
     assert mapping == {}
 
@@ -149,7 +155,7 @@ def test_skip_owner_occupied_only():
         "other llc":       _owner_agg("other-llc", "Other LLC",
                                       {"123 MAIN ST | BUFFALO | NY | 14210": 4}, 4),
     }
-    clusters, mapping = _build_operator_clusters(by_owner)
+    clusters, mapping, _ = _build_operator_clusters(by_owner)
     # Only one owner has a mailing key → not a cluster (need ≥2 owners).
     assert clusters == {}
 
@@ -160,7 +166,7 @@ def test_solo_llc_not_clustered():
         "lonely llc": _owner_agg("lonely-llc", "Lonely LLC",
                                  {"PO BOX 99 | BUFFALO | NY | 14210": 10}, 10),
     }
-    clusters, mapping = _build_operator_clusters(by_owner)
+    clusters, mapping, _ = _build_operator_clusters(by_owner)
     assert clusters == {}
 
 
@@ -174,7 +180,7 @@ def test_cluster_below_property_threshold():
         "couple b llc": _owner_agg("couple-b-llc", "Couple B LLC",
                                    {"PO BOX 5 | KENMORE | NY | 14217": 1}, 1),
     }
-    clusters, _ = _build_operator_clusters(by_owner)
+    clusters, _, _ = _build_operator_clusters(by_owner)
     assert clusters == {}
 
 
@@ -186,12 +192,49 @@ def test_cluster_total_value_sums_across_owners():
         "beta llc":  _owner_agg("beta-llc", "Beta LLC",
                                 {"PO BOX 7 | BUFFALO | NY | 14210": 3}, 3, value=600_000),
     }
-    clusters, _ = _build_operator_clusters(by_owner)
+    clusters, _, _ = _build_operator_clusters(by_owner)
     assert len(clusters) == 1
     cluster = next(iter(clusters.values()))
     assert cluster["total_value"] == 2_100_000
     # Constituent owners section also carries per-LLC value.
     assert {o["total_value"] for o in cluster["owners"]} == {1_500_000, 600_000}
+
+
+def test_cluster_emits_confidence_and_owner_groups():
+    """High-cohesion PO-box cluster should be marked high-confidence and
+    expose owner_groups for the dedup'd persons view."""
+    by_owner = {
+        "acme one llc": _owner_agg("acme-one-llc", "ACME ONE LLC",
+                                   {"PO BOX 9 | BUFFALO | NY | 14210": 4}, 4),
+        "acme two llc": _owner_agg("acme-two-llc", "ACME TWO LLC",
+                                   {"PO BOX 9 | BUFFALO | NY | 14210": 3}, 3),
+    }
+    clusters, _, counts = _build_operator_clusters(by_owner)
+    assert len(clusters) == 1
+    cluster = next(iter(clusters.values()))
+    assert cluster["confidence"] == "high"
+    assert isinstance(cluster["evidence"], str) and cluster["evidence"]
+    # owner_groups parallels owners; each LLC stays a singleton.
+    assert len(cluster["owner_groups"]) == 2
+    assert counts["high"] == 1
+
+
+def test_cluster_counts_dropped_agent_address():
+    """A 35-owner street cluster with no shared stem should be dropped."""
+    surnames = [
+        "smith", "jones", "doe", "nguyen", "kim", "patel", "garcia", "lee",
+        "brown", "davis", "wilson", "moore", "taylor", "anderson", "thomas",
+        "jackson", "white", "harris", "martin", "thompson", "lewis", "walker",
+        "hall", "allen", "young", "king", "wright", "scott", "green", "baker",
+        "adams", "nelson", "carter", "mitchell", "perez",
+    ]
+    addr = "100 LAW ST | BUFFALO | NY | 14202"
+    by_owner = {
+        f"{s} llc": _owner_agg(f"{s}-llc", f"{s.title()} LLC", {addr: 1}, 1)
+        for s in surnames
+    }
+    _, _, counts = _build_operator_clusters(by_owner)
+    assert counts["dropped"] == 1
 
 
 def test_cluster_with_government_owner_skipped():
@@ -205,6 +248,6 @@ def test_cluster_with_government_owner_skipped():
         "real owner llc":  _owner_agg("real-owner-llc", "Real Owner LLC",
                                       {shared_mail: 5}, 5),
     }
-    clusters, mapping = _build_operator_clusters(by_owner)
+    clusters, mapping, _ = _build_operator_clusters(by_owner)
     assert clusters == {}
     assert mapping == {}

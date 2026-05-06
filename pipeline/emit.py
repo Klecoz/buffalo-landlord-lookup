@@ -20,6 +20,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from cluster_score import (
+    address_kind_from_key,
+    classify_cluster,
+    dedup_persons_in_cluster,
+)
 from normalize import normalize_mail_address
 
 HERE = Path(__file__).resolve().parent
@@ -28,7 +33,9 @@ OWNERS_DIR = WEB_DATA / "owners"
 OPERATORS_DIR = WEB_DATA / "operators"
 
 # Operator clustering tunables — see docs/superpowers/specs/2026-05-06-llc-unmasking-design.md
-GENERIC_ADDRESS_OWNER_CAP = 30   # mailing addr w/ > N owners is treated as a service provider
+# The flat owner-count cap is now handled inside cluster_score.classify_cluster,
+# which uses cohesion + address-kind to decide. We still enforce a minimum size
+# below to avoid emitting trivial 2-LLC clusters that aren't meaningful.
 MIN_CLUSTER_OWNERS = 2           # need at least N distinct LLCs to be a cluster
 MIN_CLUSTER_PARCELS = 3          # and at least N total parcels across them
 
@@ -128,7 +135,7 @@ def _slugify_unique(label: str, used: set[str]) -> str:
 
 def _build_operator_clusters(
     by_owner: dict[str, dict],
-) -> tuple[dict[str, dict], dict[str, str]]:
+) -> tuple[dict[str, dict], dict[str, str], dict[str, int]]:
     """Cluster owners by their primary mailing address.
 
     Args:
@@ -141,9 +148,11 @@ def _build_operator_clusters(
         }
 
     Returns:
-        (clusters, owner_to_operator)
-        clusters: operator_slug -> { mailing_address, owners[], totals, properties[] }
+        (clusters, owner_to_operator, counts)
+        clusters: operator_slug -> { mailing_address, owners[], totals, properties[],
+                                     confidence, evidence, owner_groups[] }
         owner_to_operator: owner_norm -> operator_slug
+        counts: {high, medium, low, dropped} — confidence histogram for meta.json
     """
     # Step 1 — pick each owner's PRIMARY mail key (most common across their non-self-mail parcels)
     primary_mail: dict[str, str] = {}
@@ -166,20 +175,27 @@ def _build_operator_clusters(
     clusters: dict[str, dict] = {}
     owner_to_operator: dict[str, str] = {}
     used_slugs: set[str] = set()
+    counts = {"high": 0, "medium": 0, "low": 0, "dropped": 0}
 
     for mail_key, owner_norms in by_mail.items():
-        # Rule 1: skip generic mailing addresses (lawyers, agents, managers).
-        if len(owner_norms) > GENERIC_ADDRESS_OWNER_CAP:
-            continue
         # Inherit the leaderboard skip-list at the cluster level.
         if any(_is_skipped_owner(o) for o in owner_norms):
             continue
-        # Rule 3: meaningful size.
+        # Meaningful size.
         if len(owner_norms) < MIN_CLUSTER_OWNERS:
             continue
         total_parcels = sum(by_owner[o]["properties"] for o in owner_norms)
         if total_parcels < MIN_CLUSTER_PARCELS:
             continue
+
+        # Cohesion-based classification — see cluster_score.py.
+        owner_displays = [by_owner[o]["display"] for o in owner_norms]
+        addr_kind = address_kind_from_key(mail_key)
+        verdict = classify_cluster(owner_displays, addr_kind)
+        if verdict["action"] == "drop":
+            counts["dropped"] += 1
+            continue
+        counts[verdict["confidence"]] += 1
 
         # Build cluster.
         sorted_owners = sorted(owner_norms, key=lambda o: -by_owner[o]["properties"])
@@ -208,11 +224,18 @@ def _build_operator_clusters(
                 totals[k] += agg[k]
             owner_to_operator[o] = slug
 
+        # Person-name dedup within the cluster (safe: shared mailing address
+        # corroborates the merge; cross-cluster matches still stay separate).
+        owner_groups = dedup_persons_in_cluster(owners_block)
+
         clusters[slug] = {
             "operator_slug": slug,
             "operator_label": operator_label,
             "mailing_address": mail_key,
+            "confidence": verdict["confidence"],
+            "evidence": verdict["evidence"],
             "owners": owners_block,
+            "owner_groups": owner_groups,
             "total_properties": totals["properties"],
             "total_open_violations": totals["open"],
             "total_all_violations": totals["all_violations"],
@@ -221,7 +244,7 @@ def _build_operator_clusters(
             "properties": sorted(all_props, key=lambda p: -p["concern_score"]),
         }
 
-    return clusters, owner_to_operator
+    return clusters, owner_to_operator, counts
 
 
 def emit(joined: dict) -> dict[str, Path]:
@@ -320,8 +343,13 @@ def emit(joined: dict) -> dict[str, Path]:
 
     # Build operator clusters BEFORE writing owner files so each owner gets its operator_slug.
     print("Clustering operators by mailing address...", file=sys.stderr)
-    clusters, owner_to_operator = _build_operator_clusters(by_owner)
-    print(f"  {len(clusters):,} operator clusters formed", file=sys.stderr)
+    clusters, owner_to_operator, cluster_counts = _build_operator_clusters(by_owner)
+    print(
+        f"  {len(clusters):,} operator clusters formed "
+        f"(high={cluster_counts['high']}, medium={cluster_counts['medium']}, "
+        f"low={cluster_counts['low']}, dropped={cluster_counts['dropped']})",
+        file=sys.stderr,
+    )
 
     # ------------------------------------------------------------------
     # properties.geojson — emitted now so each feature carries operator_slug
@@ -362,6 +390,9 @@ def emit(joined: dict) -> dict[str, Path]:
     owner_aggregates: list[dict] = []
     for owner_norm, agg in by_owner.items():
         operator_slug = owner_to_operator.get(owner_norm)
+        operator_confidence = (
+            clusters[operator_slug]["confidence"] if operator_slug else None
+        )
         _atomic_write(OWNERS_DIR / f"{agg['slug']}.json", {
             "owner_norm": owner_norm,
             "owner_display": agg["display"],
@@ -371,6 +402,7 @@ def emit(joined: dict) -> dict[str, Path]:
             "total_value": agg["total_value"],
             "oldest_violation": agg["oldest_violation"],
             "operator_slug": operator_slug,
+            "operator_confidence": operator_confidence,
             "properties": agg["props"],
         })
         owner_aggregates.append({
@@ -419,6 +451,8 @@ def emit(joined: dict) -> dict[str, Path]:
             "slug": c["operator_slug"],
             "label": c["operator_label"],
             "mailing_address": c["mailing_address"],
+            "confidence": c["confidence"],
+            "evidence": c["evidence"],
             "owners_n": len(c["owners"]),
             "properties": c["total_properties"],
             "open": c["total_open_violations"],
@@ -486,6 +520,8 @@ def emit(joined: dict) -> dict[str, Path]:
     # meta.json
     # ------------------------------------------------------------------
     print("Emitting meta.json...", file=sys.stderr)
+    meta = dict(meta)  # don't mutate caller's dict
+    meta["clusters"] = cluster_counts
     _atomic_write(WEB_DATA / "meta.json", meta)
 
     return {
