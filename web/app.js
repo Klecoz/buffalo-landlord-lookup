@@ -119,19 +119,15 @@ function initMap() {
         "#475569",
       ];
 
-      // Dim backdrop drawn beneath the colorful layer; toggled on with map-filter.
+      // Dim backdrop covers ALL parcels at constant opacity — toggled on
+      // when the map filter is active.
       map.addLayer({
         id: "parcels-dim-fill",
         type: "fill",
         source: "parcels",
         paint: {
-          "fill-color": "#1f2937",
-          "fill-opacity": [
-            "interpolate", ["linear"], ["zoom"],
-            13, 0,
-            15, 0.55,
-            18, 0.7,
-          ],
+          "fill-color": "#0a0d12",
+          "fill-opacity": 0.7,
         },
         layout: { "visibility": "none" },
         filter: ["==", "$type", "Polygon"],
@@ -168,6 +164,28 @@ function initMap() {
           ],
         },
         filter: ["==", "$type", "Polygon"],
+      });
+
+      // Highlighted-parcel overlay — drawn on top of parcels-fill / dim layer.
+      // Constant high opacity so the matched parcels stand out at every zoom.
+      map.addLayer({
+        id: "parcels-highlight-fill",
+        type: "fill",
+        source: "parcels",
+        paint: {
+          "fill-color": colorExpr,
+          "fill-opacity": 0.95,
+        },
+        layout: { "visibility": "none" },
+        filter: ["==", ["get", "owner_slug"], "__none__"],
+      });
+      map.addLayer({
+        id: "parcels-highlight-outline",
+        type: "line",
+        source: "parcels",
+        paint: { "line-color": "#fff", "line-width": 1.5, "line-opacity": 0.7 },
+        layout: { "visibility": "none" },
+        filter: ["==", ["get", "owner_slug"], "__none__"],
       });
 
       // Selected parcel highlight
@@ -415,9 +433,19 @@ function applyMapFilter(kind, slug, label) {
   const expr = kind === "owner"
     ? ["==", ["get", "owner_slug"], slug]
     : ["==", ["get", "operator_slug"], slug];
-  state.map.setFilter("parcels-fill", expr);
-  state.map.setFilter("parcels-outline", expr);
+
+  // Show dim backdrop over all parcels.
   state.map.setLayoutProperty("parcels-dim-fill", "visibility", "visible");
+
+  // Show the bright highlight overlay only for matched parcels.
+  state.map.setFilter("parcels-highlight-fill", expr);
+  state.map.setFilter("parcels-highlight-outline", expr);
+  state.map.setLayoutProperty("parcels-highlight-fill", "visibility", "visible");
+  state.map.setLayoutProperty("parcels-highlight-outline", "visibility", "visible");
+
+  // Existing colorful base layer stays unfiltered — its zoom-aware opacity
+  // means it's invisible at low zoom and only adds detail when zoomed in,
+  // which is fine.
 
   const bbox = _highlightedBbox(kind, slug);
   state.mapFilter = { kind, slug, label, count: bbox?.count ?? 0 };
@@ -426,18 +454,17 @@ function applyMapFilter(kind, slug, label) {
     state.map.fitBounds(bbox.bounds, { padding: 60, maxZoom: 17, duration: 700 });
   }
   updateFilterChip();
-  // Re-render the active panel so the toggle button reflects current state.
-  if (state.selectedId) {
-    // dossier showing — leave it
-  }
 }
 
 function clearMapFilter() {
   if (!state.map) return;
-  if (state.map.getLayer("parcels-fill")) {
-    state.map.setFilter("parcels-fill", ["==", "$type", "Polygon"]);
-    state.map.setFilter("parcels-outline", ["==", "$type", "Polygon"]);
+  if (state.map.getLayer("parcels-highlight-fill")) {
     state.map.setLayoutProperty("parcels-dim-fill", "visibility", "none");
+    state.map.setLayoutProperty("parcels-highlight-fill", "visibility", "none");
+    state.map.setLayoutProperty("parcels-highlight-outline", "visibility", "none");
+    // Reset the highlight filter so re-show starts clean.
+    state.map.setFilter("parcels-highlight-fill", ["==", ["get", "owner_slug"], "__none__"]);
+    state.map.setFilter("parcels-highlight-outline", ["==", ["get", "owner_slug"], "__none__"]);
   }
   state.mapFilter = null;
   updateFilterChip();
