@@ -44,6 +44,12 @@ function showPanel(html) {
   $("#panel-content").innerHTML = html;
   $("#panel").classList.remove("hidden");
   $("#reopen-panel").classList.add("hidden");
+  // Re-wire any "Highlight on map" buttons that were just rendered.
+  $$("#panel .highlight-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      window.toggleMapHighlight(btn.dataset.kind, btn.dataset.slug, btn.dataset.label);
+    });
+  });
 }
 function hidePanel() {
   // "Close" returns to leaderboards rather than hiding the panel entirely;
@@ -317,8 +323,10 @@ function renderPortfolio(portfolio) {
     && state.mapFilter.kind === "owner"
     && state.mapFilter.slug === ownerSlug;
   const highlightBtn = ownerSlug
-    ? `<button class="cta ${isHighlighted ? "toggled" : ""}"
-              onclick="window.toggleMapHighlight('owner', '${escapeHtml(ownerSlug)}', ${JSON.stringify(portfolio.owner_display)})">
+    ? `<button class="cta highlight-btn ${isHighlighted ? "toggled" : ""}"
+              data-kind="owner"
+              data-slug="${escapeHtml(ownerSlug)}"
+              data-label="${escapeHtml(portfolio.owner_display || "")}">
          ${isHighlighted ? "✓ Highlighted on map" : "Highlight on map"}
        </button>`
     : "";
@@ -569,8 +577,10 @@ function renderOperator(op) {
   const isHighlighted = state.mapFilter
     && state.mapFilter.kind === "operator"
     && state.mapFilter.slug === op.operator_slug;
-  const highlightBtn = `<button class="cta ${isHighlighted ? "toggled" : ""}"
-            onclick="window.toggleMapHighlight('operator', '${escapeHtml(op.operator_slug)}', ${JSON.stringify(op.operator_label)})">
+  const highlightBtn = `<button class="cta highlight-btn ${isHighlighted ? "toggled" : ""}"
+            data-kind="operator"
+            data-slug="${escapeHtml(op.operator_slug)}"
+            data-label="${escapeHtml(op.operator_label || "")}">
        ${isHighlighted ? "✓ Highlighted on map" : "Highlight on map"}
      </button>`;
 
