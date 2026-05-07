@@ -185,20 +185,14 @@ def _build_operator_clusters(
         # Meaningful size.
         if len(owner_norms) < MIN_CLUSTER_OWNERS:
             continue
+        total_parcels = sum(by_owner[o]["properties"] for o in owner_norms)
+        if total_parcels < MIN_CLUSTER_PARCELS:
+            continue
 
         # Cohesion-based classification — see cluster_score.py.
-        # Done before the parcel-count gate so the alter-ego pattern
-        # (1 person + 1 LLC at a shared street address) can bypass it:
-        # those pairs are a valid unmasking signal even at 2 total parcels.
         owner_displays = [by_owner[o]["display"] for o in owner_norms]
         addr_kind = address_kind_from_key(mail_key)
         verdict = classify_cluster(owner_displays, addr_kind)
-
-        total_parcels = sum(by_owner[o]["properties"] for o in owner_norms)
-        is_alter_ego = verdict.get("pattern") == "alter_ego"
-        if total_parcels < MIN_CLUSTER_PARCELS and not is_alter_ego:
-            continue
-
         if verdict["action"] == "drop":
             counts["dropped"] += 1
             continue

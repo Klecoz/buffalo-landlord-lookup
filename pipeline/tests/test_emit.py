@@ -289,13 +289,13 @@ def test_cluster_audit_records_alter_ego_pattern():
         "mahoney, martin c": {
             "slug": "mahoney-martin-c", "display": "Mahoney, Martin C",
             "mail_keys": Counter({"259 BRECKENRIDGE | BUFFALO | NY | 14222": 2}),
-            "properties": 1, "open": 0, "all_violations": 0,
+            "properties": 2, "open": 0, "all_violations": 0,
             "complaints_311_12mo": 0, "total_value": 200_000, "props": [],
         },
         "259 breckenridge llc": {
             "slug": "259-breckenridge-llc", "display": "259 Breckenridge LLC",
             "mail_keys": Counter({"259 BRECKENRIDGE | BUFFALO | NY | 14222": 1}),
-            "properties": 1, "open": 0, "all_violations": 0,
+            "properties": 2, "open": 0, "all_violations": 0,
             "complaints_311_12mo": 0, "total_value": 150_000, "props": [],
         },
     }
