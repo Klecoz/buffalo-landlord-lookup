@@ -69,6 +69,45 @@ def test_cohesion_ignores_stopwords():
     assert score < 0.5
 
 
+# --- cohesion_details ----------------------------------------------------
+
+def test_cohesion_details_strong_family():
+    from cluster_score import cohesion_details
+    d = cohesion_details([
+        "hertel properties llc",
+        "hertel holdings llc",
+        "hertel realty llc",
+    ])
+    assert d["score"] == 1.0
+    assert d["distinctive_token"] == "hertel"
+    assert "hertel" in d["explanation"]
+    assert d["owner_count"] == 3
+
+
+def test_cohesion_details_no_distinctive_tokens():
+    from cluster_score import cohesion_details
+    d = cohesion_details(["llc", "inc"])  # all stopwords
+    assert d["score"] == 0.0
+    assert d["distinctive_token"] is None
+    assert d["explanation"] == "no distinctive tokens"
+
+
+def test_cohesion_details_single_owner():
+    from cluster_score import cohesion_details
+    d = cohesion_details(["solo llc"])
+    assert d["score"] == 1.0
+    assert d["distinctive_token"] is None
+    assert d["explanation"] == "single owner"
+
+
+def test_cohesion_details_empty():
+    from cluster_score import cohesion_details
+    d = cohesion_details([])
+    assert d["score"] == 0.0
+    assert d["distinctive_token"] is None
+    assert d["owner_count"] == 0
+
+
 # --- classify_cluster ----------------------------------------------------
 
 def test_classify_real_operator_po_box_high():

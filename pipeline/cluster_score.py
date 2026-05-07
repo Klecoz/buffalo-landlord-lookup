@@ -46,17 +46,20 @@ def _tokenize_for_stem(name: str) -> list[str]:
     return [t for t in tokens if t not in _STEM_STOPWORDS and len(t) >= 2]
 
 
-def name_stem_cohesion(owner_names: list[str]) -> tuple[float, str]:
-    """Score how much a cluster's owner names look like one family.
+def cohesion_details(owner_names: list[str]) -> dict:
+    """Structured form of cohesion analysis.
 
-    Returns (score in 0.0–1.0, evidence_string). Score = fraction of owners
-    sharing the most common distinctive token. Higher = tighter family.
+    Returns dict with: score (0.0–1.0), distinctive_token (str|None),
+    explanation (str), owner_count (int). Used by emit.py to build the
+    per-cluster audit block surfaced in the UI.
     """
     n = len(owner_names)
     if n == 0:
-        return (0.0, "empty cluster")
+        return {"score": 0.0, "distinctive_token": None,
+                "explanation": "empty cluster", "owner_count": 0}
     if n == 1:
-        return (1.0, "single owner")
+        return {"score": 1.0, "distinctive_token": None,
+                "explanation": "single owner", "owner_count": 1}
 
     token_owner_counts: Counter[str] = Counter()
     for name in owner_names:
@@ -64,16 +67,32 @@ def name_stem_cohesion(owner_names: list[str]) -> tuple[float, str]:
             token_owner_counts[t] += 1
 
     if not token_owner_counts:
-        return (0.0, "no distinctive tokens")
+        return {"score": 0.0, "distinctive_token": None,
+                "explanation": "no distinctive tokens", "owner_count": n}
 
-    # Best = highest coverage; longer token wins ties (more identity-bearing).
     token, count = max(
         token_owner_counts.items(),
         key=lambda kv: (kv[1], len(kv[0])),
     )
-    score = count / n
-    evidence = f"{count} of {n} owners share '{token}'"
-    return (score, evidence)
+    return {
+        "score": count / n,
+        "distinctive_token": token,
+        "explanation": f"{count} of {n} owners share '{token}'",
+        "owner_count": n,
+    }
+
+
+def name_stem_cohesion(owner_names: list[str]) -> tuple[float, str]:
+    """Score how much a cluster's owner names look like one family.
+
+    Returns (score in 0.0–1.0, evidence_string). Score = fraction of owners
+    sharing the most common distinctive token. Higher = tighter family.
+
+    Thin wrapper around cohesion_details — kept for back-compat with
+    classify_cluster and existing tests.
+    """
+    d = cohesion_details(owner_names)
+    return (d["score"], d["explanation"])
 
 
 def classify_cluster(owner_names: list[str], address_kind: str) -> dict:
