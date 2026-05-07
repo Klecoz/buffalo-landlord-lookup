@@ -40,6 +40,48 @@ function fmtMoney(n) {
   if (n >= 1_000)         return `$${Math.round(n / 1_000)}K`;
   return `$${n}`;
 }
+// Freshness pill: a small inline label rendered next to a panel header
+// that tells the reader how current the underlying source is.
+//
+// kind: "violations" | "311" | "parcels"
+// Returns an HTML string; pass through directly into a template literal.
+function freshnessPill(kind) {
+  const meta = state.meta || {};
+  const generated = meta.generated_at || "";
+  const maxDateByKind = {
+    violations: meta.code_violations_max_date || "",
+    "311": meta.complaints_311_max_date || "",
+    parcels: meta.generated_at || "",
+  };
+  const labelByKind = {
+    violations: "Code violations",
+    "311": "311 complaints",
+    parcels: "Parcels",
+  };
+  const max = maxDateByKind[kind] || "";
+  const label = labelByKind[kind] || kind;
+  if (!max && !generated) return "";
+
+  const ageDays = (() => {
+    if (!max) return Infinity;
+    const ms = Date.now() - new Date(max).getTime();
+    return Math.floor(ms / 86400000);
+  })();
+
+  // Special-case 311 freeze: the dataset stopped updating in 2024-05.
+  // If the max date precedes the run by > 180 days, treat it as known-frozen.
+  if (kind === "311" && ageDays > 180) {
+    return `<span class="freshness-pill stale" title="Buffalo's 311 dataset (whkc-e5vr) stopped updating May 2024. The 12-month window ends at the dataset's max date, not today.">${label}: dataset frozen since ${max.slice(0, 7)}</span>`;
+  }
+
+  let cls = "fresh";
+  if (ageDays > 180) cls = "stale";
+  else if (ageDays > 30) cls = "aging";
+
+  const dateLabel = max ? max.slice(0, 10) : generated.slice(0, 10);
+  return `<span class="freshness-pill ${cls}">${label}: through ${dateLabel}</span>`;
+}
+
 function _copyLinkBtnHtml() {
   return `<button class="copy-link-btn" onclick="window.copyCurrentUrl(this)" title="Copy a shareable link to this view">Copy link</button>`;
 }
@@ -338,7 +380,7 @@ function renderDossier(props, dossier) {
 
     ${portfolioCta}
 
-    <h3>Recent code violations (${violations.length})</h3>
+    <h3>Recent code violations (${violations.length}) ${freshnessPill("violations")}</h3>
     ${violations.length === 0
       ? `<p class="empty">No code violations on record.</p>`
       : `<ul class="violations">${violations.slice(0, 10).map(v => `
@@ -348,7 +390,7 @@ function renderDossier(props, dossier) {
           </li>`).join("")}</ul>`
     }
 
-    <h3>Recent 311 housing complaints (${complaints.length})</h3>
+    <h3>Recent 311 housing complaints (${complaints.length}) ${freshnessPill("311")}</h3>
     ${complaints.length === 0
       ? `<p class="empty">No housing-related 311 complaints in the last 18 months.</p>`
       : `<ul class="complaints">${complaints.slice(0, 10).map(c => `
@@ -450,7 +492,7 @@ function renderPortfolio(portfolio) {
     ${operatorCta}
     ${highlightBtn}
 
-    <h3>Properties (sorted by concern score)</h3>
+    <h3>Properties (sorted by concern score) ${freshnessPill("violations")} ${freshnessPill("311")}</h3>
     <table class="portfolio">
       <thead><tr><th>Address</th><th class="num">Open</th><th class="num">311</th><th class="num">Demo</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -784,7 +826,7 @@ function renderOperator(op) {
     <h3>Constituent LLCs (${op.owners.length})</h3>
     <ul class="leaderboard llc-list">${ownersList}</ul>
 
-    <h3>Properties (top 200 by concern)</h3>
+    <h3>Properties (top 200 by concern) ${freshnessPill("violations")} ${freshnessPill("311")}</h3>
     <table class="portfolio">
       <thead><tr><th>Address</th><th class="num">Open</th><th class="num">311</th><th class="num">Demo</th></tr></thead>
       <tbody>${propsRows}</tbody>
