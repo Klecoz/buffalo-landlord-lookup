@@ -719,6 +719,67 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   border-color: var(--signal);
 }
 
+/* ----- Audit disclosure ("How these names are grouped") ----------------- */
+.audit-details {
+  margin: 4px 0 14px;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 6px 0;
+}
+.audit-details > summary {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+  padding: 4px 0;
+  list-style: none;
+  user-select: none;
+}
+.audit-details > summary::-webkit-details-marker { display: none; }
+.audit-details > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  width: 12px;
+  color: var(--rule-2);
+}
+.audit-details[open] > summary::before { content: "▾ "; }
+.audit-details[open] > summary { color: var(--ink); }
+
+.audit-list {
+  list-style: none;
+  margin: 6px 0 4px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.audit-list > li {
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--rule);
+}
+.audit-list > li:last-child { border-bottom: 0; }
+.audit-key {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  margin-right: 6px;
+  min-width: 7em;
+}
+.audit-list .sub {
+  display: inline;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.audit-foot {
+  margin: 8px 0 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
 /* ----- Responsive ------------------------------------------------------- */
 @media (max-width: 880px) {
   .masthead { padding: 16px 18px 12px; }

@@ -730,6 +730,51 @@ function renderLeaderboards() {
   });
 }
 
+// Render the "How these names are grouped" disclosure body for an operator.
+// Pulls fields from op.audit (emitted by the pipeline). Falls back to the
+// top-level evidence string if op.audit is missing (older data files).
+function renderAuditDisclosure(op) {
+  const a = op.audit;
+  if (!a) {
+    return op.evidence
+      ? `<details class="audit-details"><summary>How these names are grouped</summary>
+           <p>${escapeHtml(op.evidence)}</p>
+         </details>`
+      : "";
+  }
+
+  const cohesion = a.cohesion || {};
+  const cohesionLine = cohesion.explanation
+    ? `<li><span class="audit-key">Cohesion</span> ${escapeHtml(cohesion.explanation)} <span class="sub">(score ${cohesion.score})</span></li>`
+    : "";
+  const patternLine = a.pattern === "alter_ego"
+    ? `<li><span class="audit-key">Pattern</span> alter-ego — one person + one LLC at the same street address. Classic LLC-unmasking signal.</li>`
+    : "";
+  const dedupLines = (a.person_dedups || []).map(d => `
+    <li><span class="audit-key">Name dedup</span>
+      <strong>${escapeHtml(d.canonical)}</strong>
+      <span class="sub">also recorded as: ${(d.variants || []).map(escapeHtml).join(", ")}</span>
+    </li>`).join("");
+  const memberLines = (op.owners || []).map(o => `
+    <li><span class="audit-key">Member</span> ${escapeHtml(o.display)}
+      <span class="sub">(${o.properties} prop${o.properties === 1 ? "" : "s"})</span>
+    </li>`).join("");
+
+  return `
+    <details class="audit-details">
+      <summary>How these names are grouped</summary>
+      <ul class="audit-list">
+        <li><span class="audit-key">Shared mailing address</span> ${escapeHtml(a.shared_mailing_address || "—")}
+          <span class="sub">(${escapeHtml(a.address_kind || "")})</span></li>
+        ${cohesionLine}
+        ${patternLine}
+        ${dedupLines}
+        ${memberLines}
+      </ul>
+      <p class="audit-foot sub">${a.member_count} LLC${a.member_count === 1 ? "" : "s"} merged into one operator. Bulk LLC ownership data is not publicly available in NYS, so this is the best inference the public data allows.</p>
+    </details>`;
+}
+
 // ---------- operator view ----------
 window.openOperator = async function (slug, opts = {}) {
   try {
@@ -810,6 +855,7 @@ function renderOperator(op) {
     ${confBadge}
     ${evidenceLine}
     <p class="empty" style="margin:2px 0 12px;">Mailing address: <strong>${escapeHtml(op.mailing_address)}</strong></p>
+    ${renderAuditDisclosure(op)}
 
     <div class="stat-grid">
       <div class="stat"><div class="num">${op.total_properties}</div><div class="label">Properties</div></div>
