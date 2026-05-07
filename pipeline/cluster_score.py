@@ -31,6 +31,10 @@ _STEM_STOPWORDS = frozenset({
     "rental", "investments", "investment", "group", "enterprises",
     "enterprise", "management", "mgmt", "associates", "partners",
     "partnership", "real", "estate",
+    # Geographic noise — street suffixes and Buffalo-specific tokens that
+    # show up in many unrelated owner names (e.g. "Elm Street LLC" + "Main
+    # Street LLC" would otherwise fake cohesion via "street").
+    "street", "road", "avenue", "ave", "lane", "drive", "buffalo", "main",
 })
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -83,6 +87,23 @@ def classify_cluster(owner_names: list[str], address_kind: str) -> dict:
     n = len(owner_names)
     score, evidence = name_stem_cohesion(owner_names)
     is_po = address_kind == "po_box"
+
+    # Alter-ego pattern: exactly one person + one LLC sharing a street
+    # address. The classic LLC-unmasking signal — a resident owns an LLC
+    # that holds (probably) their property. Cohesion is structurally
+    # uninformative here (only 2 owners, different name spaces), so promote
+    # to high directly. PO-box pairs are already covered by the n<=8 branch.
+    if not is_po and n == 2:
+        llc_count = sum(1 for name in owner_names if _is_llc_like(name))
+        person_count = sum(
+            1 for name in owner_names
+            if not _is_llc_like(name) and _person_signature(name) is not None
+        )
+        if llc_count == 1 and person_count == 1:
+            return {
+                "action": "keep", "confidence": "high",
+                "evidence": "person + LLC at shared street address — alter-ego pattern",
+            }
 
     if is_po and score >= 0.5:
         return {"action": "keep", "confidence": "high", "evidence": evidence}

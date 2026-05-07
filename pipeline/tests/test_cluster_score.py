@@ -22,13 +22,13 @@ from cluster_score import (
 
 def test_cohesion_strong_family():
     score, ev = name_stem_cohesion([
-        "buffalo properties llc",
-        "buffalo holdings llc",
-        "buffalo realty llc",
-        "buffalo rentals inc",
+        "hertel properties llc",
+        "hertel holdings llc",
+        "hertel realty llc",
+        "hertel rentals inc",
     ])
     assert score == 1.0
-    assert "buffalo" in ev
+    assert "hertel" in ev
 
 
 def test_cohesion_mostly_shared():
@@ -126,6 +126,70 @@ def test_classify_low_signal_street_kept_low():
     owners = ["alpha llc", "beta inc", "gamma corp"]
     result = classify_cluster(owners, "street")
     assert result["action"] == "keep"
+
+
+# --- alter-ego rule (person + LLC at street address) --------------------
+
+def test_classify_alter_ego_person_plus_llc_high():
+    """Classic LLC-unmasking pattern: a resident sharing a street address
+    with the LLC that (presumably) holds their property."""
+    result = classify_cluster(
+        ["Mahoney, Martin C", "259 Breckenridge LLC"], "street",
+    )
+    assert result["action"] == "keep"
+    assert result["confidence"] == "high"
+    assert "alter-ego" in result["evidence"]
+
+
+def test_classify_alter_ego_does_not_fire_for_two_persons():
+    """Two persons co-residing isn't an alter-ego — keep at the score-based
+    confidence (medium/low), not bumped to high."""
+    result = classify_cluster(
+        ["Schultz, Douglas A", "Moyer, Jeffrey T"], "street",
+    )
+    assert result["action"] == "keep"
+    assert result["confidence"] != "high"
+
+
+def test_classify_alter_ego_does_not_fire_for_two_llcs():
+    """Two unrelated LLCs at one office isn't an alter-ego — score-based."""
+    result = classify_cluster(
+        ["EST Downtown LLC", "23 North Street LLC"], "street",
+    )
+    assert result["action"] == "keep"
+    assert result["confidence"] != "high"
+
+
+def test_classify_alter_ego_skipped_for_po_box():
+    """PO-box pairs are already covered by the existing n<=8 PO box rule;
+    the alter-ego branch shouldn't intercept and override the evidence."""
+    result = classify_cluster(
+        ["Mahoney, Martin C", "259 Breckenridge LLC"], "po_box",
+    )
+    assert result["action"] == "keep"
+    assert result["confidence"] == "high"
+    assert "alter-ego" not in result["evidence"]
+
+
+# --- stopword expansion --------------------------------------------------
+
+def test_cohesion_strips_street_suffix():
+    """'street' is now a stopword — names that only share it have no real
+    cohesion and shouldn't score 1.0."""
+    score, _ = name_stem_cohesion([
+        "100 Elm Street LLC",
+        "200 Oak Street LLC",
+    ])
+    assert score < 1.0
+
+
+def test_cohesion_strips_buffalo():
+    """'buffalo' alone is geographic noise, not an identity token."""
+    score, _ = name_stem_cohesion([
+        "Buffalo Holdings LLC",
+        "Buffalo Realty LLC",
+    ])
+    assert score < 1.0
 
 
 # --- address_kind_from_key -----------------------------------------------
