@@ -77,7 +77,7 @@ def test_join_violations_aggregates_open_total_and_date():
         {"address": "216 LANDON", "status": "ACTIVE",
          "date": "2025-08-15T00:00:00.000", "description": "rodents"},
     ]
-    matched = _join_violations(by_addr, violations)
+    matched, max_date = _join_violations(by_addr, violations)
     assert matched == 3
     p = by_addr["216 LANDON"]
     assert p["code_violations_total"] == 3

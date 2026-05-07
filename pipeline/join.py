@@ -209,9 +209,19 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
     return parcels, by_addr
 
 
-def _join_violations(by_addr: dict[str, dict], violations: list[dict]) -> int:
+def _join_violations(by_addr: dict[str, dict], violations: list[dict]) -> tuple[int, str]:
+    """Match violations to parcels by normalized address.
+
+    Returns (matched_count, max_date_iso). max_date is the freshest
+    `date` field observed across all violations (matched or not), so the
+    UI can render a freshness pill on the violations panel.
+    """
     matched = 0
+    max_date_iso = ""
     for v in violations:
+        date = _parse_date(v.get("date"))
+        if date and date.isoformat() > max_date_iso:
+            max_date_iso = date.isoformat()
         norm = normalize_address(v.get("address") or "")
         parcel = _index_lookup(by_addr, norm)
         if not parcel:
@@ -221,19 +231,17 @@ def _join_violations(by_addr: dict[str, dict], violations: list[dict]) -> int:
         parcel["code_violations_total"] += 1
         if is_open:
             parcel["code_violations_open"] += 1
-        date = _parse_date(v.get("date"))
         if date:
             prev = parcel["last_violation_date"]
             if prev is None or date.isoformat() > prev:
                 parcel["last_violation_date"] = date.isoformat()
-        # keep a slim record for the dossier
         parcel["violations"].append({
             "date": v.get("date"),
             "status": v.get("status"),
             "description": v.get("description"),
             "code_section": v.get("code_section"),
         })
-    return matched
+    return matched, max_date_iso
 
 
 def _join_311(by_addr: dict[str, dict], requests_311: list[dict]) -> tuple[int, str]:
@@ -311,7 +319,7 @@ def join_all() -> dict:
 
     print("Joining code violations...", file=sys.stderr)
     violations = _load_json(RAW / "code_violations.json")
-    v_matched = _join_violations(by_addr, violations)
+    v_matched, v_max_date = _join_violations(by_addr, violations)
     print(f"  matched {v_matched:,}/{len(violations):,}", file=sys.stderr)
 
     print("Joining 311 housing complaints...", file=sys.stderr)
@@ -352,6 +360,7 @@ def join_all() -> dict:
         "parcels": len(parcels),
         "violations_total": len(violations),
         "violations_matched": v_matched,
+        "code_violations_max_date": v_max_date,
         "complaints_311_total": len(requests_311),
         "complaints_311_matched": c_matched,
         "complaints_311_max_date": c_max_date,
