@@ -106,20 +106,26 @@ async function loadDossiers() {
 
 // ---------- map ----------
 function initMap() {
-  // Pure raster style — no Mapbox token needed
+  // Carto Positron raster (no API key, light editorial basemap)
   const map = new maplibregl.Map({
     container: "map",
     style: {
       version: 8,
       sources: {
-        osm: {
+        carto: {
           type: "raster",
-          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tiles: [
+            "https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png",
+            "https://b.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png",
+            "https://c.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png",
+            "https://d.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png",
+          ],
           tileSize: 256,
-          attribution: "© OpenStreetMap contributors",
+          attribution:
+            "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors © <a href='https://carto.com/attributions'>CARTO</a>",
         },
       },
-      layers: [{ id: "osm", type: "raster", source: "osm" }],
+      layers: [{ id: "carto", type: "raster", source: "carto" }],
     },
     center: [BUFFALO.lng, BUFFALO.lat],
     zoom: BUFFALO.zoom,
@@ -133,13 +139,16 @@ function initMap() {
 
       // Build a circle layer at the centroid of each parcel polygon for fast render.
       // Color encodes concern_score; demolished parcels override.
+      // Monochrome ramp + single signal red — matches CSS --s0..--s4 tokens.
+      // The point: the map is mostly quiet gray; the eye lands on red where
+      // concerns are severe.
       const colorExpr = [
         "case",
-        ["==", ["get", "demolished"], true], "#b62324",
-        [">=", ["get", "concern_score"], 11], "#f85149",
-        [">=", ["get", "concern_score"], 5], "#f97316",
-        [">=", ["get", "concern_score"], 1], "#facc15",
-        "#475569",
+        ["==", ["get", "demolished"], true], "#6e1418",  // s4 deep red
+        [">=", ["get", "concern_score"], 11], "#b9292d", // s3 signal red
+        [">=", ["get", "concern_score"], 5],  "#88847d", // s2 mid gray
+        [">=", ["get", "concern_score"], 1],  "#b8b4ab", // s1 light gray
+        "#dcd9d2",                                       // s0 nearly-paper
       ];
 
       // Dim backdrop covers ALL parcels at constant opacity — toggled on
@@ -149,7 +158,7 @@ function initMap() {
         type: "fill",
         source: "parcels",
         paint: {
-          "fill-color": "#0a0d12",
+          "fill-color": "#fafaf7",   // paper wash dims unmatched parcels
           "fill-opacity": 0.7,
         },
         layout: { "visibility": "none" },
@@ -173,17 +182,17 @@ function initMap() {
         filter: ["==", "$type", "Polygon"],
       });
 
-      // Outline at high zoom
+      // Outline at high zoom — ink hairline
       map.addLayer({
         id: "parcels-outline",
         type: "line",
         source: "parcels",
         paint: {
-          "line-color": "#0008",
+          "line-color": "#0c0c0c",
           "line-width": 0.5,
           "line-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            14, 0, 16, 0.6,
+            14, 0, 16, 0.4,
           ],
         },
         filter: ["==", "$type", "Polygon"],
@@ -196,8 +205,8 @@ function initMap() {
         type: "fill",
         source: "parcels",
         paint: {
-          "fill-color": "#fb8500",
-          "fill-opacity": 0.95,
+          "fill-color": "#b9292d",   // signal red — only chromatic event
+          "fill-opacity": 0.9,
         },
         layout: { "visibility": "none" },
         filter: ["==", ["get", "owner_slug"], "__none__"],
@@ -215,7 +224,7 @@ function initMap() {
         type: "circle",
         source: "highlight-points",
         paint: {
-          "circle-color": "#fb8500",
+          "circle-color": "#b9292d",   // signal red
           "circle-radius": [
             "interpolate", ["linear"], ["zoom"],
             10, 4,
@@ -223,11 +232,11 @@ function initMap() {
             15, 7,
             17, 0,   // fade out at high zoom — polygon fill takes over
           ],
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#0c0c0c",   // ink hairline
           "circle-stroke-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            13, 0.9,
+            13, 0.6,
             17, 0,
           ],
         },
@@ -239,7 +248,7 @@ function initMap() {
         id: "parcels-selected",
         type: "line",
         source: "parcels",
-        paint: { "line-color": "#fb8500", "line-width": 3 },
+        paint: { "line-color": "#0c0c0c", "line-width": 1.5 },   // ink selected outline
         filter: ["==", "id", ""],
       });
 
@@ -844,6 +853,8 @@ async function loadMeta() {
     const c311Note = c311 ? ` · 311 data through ${c311}` : "";
     $("#meta-info").textContent =
       `Refreshed ${date} · ${state.meta.parcels.toLocaleString()} parcels · ${state.meta.owners.toLocaleString()} owners${c311Note}`;
+    const issueEl = $("#issue-date");
+    if (issueEl && date) issueEl.textContent = `Public records · Buffalo, N.Y. · refreshed ${date}`;
   } catch {
     $("#meta-info").textContent = "Refresh date unknown";
   }
