@@ -107,6 +107,11 @@ def classify_cluster(owner_names: list[str], address_kind: str) -> dict:
     score, evidence = name_stem_cohesion(owner_names)
     is_po = address_kind == "po_box"
 
+    # Alter-ego pattern: exactly one person + one LLC sharing a street
+    # address. The classic LLC-unmasking signal — a resident owns an LLC
+    # that holds (probably) their property. Cohesion is structurally
+    # uninformative here (only 2 owners, different name spaces), so promote
+    # to high directly. PO-box pairs are already covered by the n<=8 branch.
     if not is_po and n == 2:
         llc_count = sum(1 for name in owner_names if _is_llc_like(name))
         person_count = sum(
