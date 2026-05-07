@@ -210,6 +210,28 @@ def test_classify_alter_ego_skipped_for_po_box():
     assert "alter-ego" not in result["evidence"]
 
 
+def test_classify_pattern_alter_ego_set():
+    result = classify_cluster(
+        ["Mahoney, Martin C", "259 Breckenridge LLC"], "street",
+    )
+    assert result["pattern"] == "alter_ego"
+
+
+def test_classify_pattern_none_for_normal_cluster():
+    result = classify_cluster(
+        [f"hertel holdings {i} llc" for i in range(5)], "street",
+    )
+    assert result["pattern"] is None
+
+
+def test_classify_pattern_none_for_po_box_alter_ego_shape():
+    """PO-box pairs go through the n<=8 branch, not alter-ego."""
+    result = classify_cluster(
+        ["Mahoney, Martin C", "259 Breckenridge LLC"], "po_box",
+    )
+    assert result["pattern"] is None
+
+
 # --- stopword expansion --------------------------------------------------
 
 def test_cohesion_strips_street_suffix():

@@ -100,18 +100,13 @@ def classify_cluster(owner_names: list[str], address_kind: str) -> dict:
 
     address_kind: "po_box" | "street". PO boxes are a stronger identity
     signal than street addresses, so the thresholds are looser.
-    Returns {action: "keep"|"drop", confidence: "high"|"medium"|"low",
-             evidence: str}.
+    Returns {action, confidence, evidence, pattern}. `pattern` is one of
+    {"alter_ego", None} — surfaced in the per-cluster audit block.
     """
     n = len(owner_names)
     score, evidence = name_stem_cohesion(owner_names)
     is_po = address_kind == "po_box"
 
-    # Alter-ego pattern: exactly one person + one LLC sharing a street
-    # address. The classic LLC-unmasking signal — a resident owns an LLC
-    # that holds (probably) their property. Cohesion is structurally
-    # uninformative here (only 2 owners, different name spaces), so promote
-    # to high directly. PO-box pairs are already covered by the n<=8 branch.
     if not is_po and n == 2:
         llc_count = sum(1 for name in owner_names if _is_llc_like(name))
         person_count = sum(
@@ -122,27 +117,35 @@ def classify_cluster(owner_names: list[str], address_kind: str) -> dict:
             return {
                 "action": "keep", "confidence": "high",
                 "evidence": "person + LLC at shared street address — alter-ego pattern",
+                "pattern": "alter_ego",
             }
 
     if is_po and score >= 0.5:
-        return {"action": "keep", "confidence": "high", "evidence": evidence}
+        return {"action": "keep", "confidence": "high",
+                "evidence": evidence, "pattern": None}
     if is_po and n <= 8:
         return {
             "action": "keep", "confidence": "high",
             "evidence": f"{n} LLC{'s' if n != 1 else ''} sharing one PO box",
+            "pattern": None,
         }
     if not is_po and score >= 0.6:
-        return {"action": "keep", "confidence": "high", "evidence": evidence}
+        return {"action": "keep", "confidence": "high",
+                "evidence": evidence, "pattern": None}
     if not is_po and score >= 0.3:
-        return {"action": "keep", "confidence": "medium", "evidence": evidence}
+        return {"action": "keep", "confidence": "medium",
+                "evidence": evidence, "pattern": None}
     if n > 30 and score < 0.3:
         return {
             "action": "drop", "confidence": "low",
             "evidence": f"{n} unrelated owners at one address — likely agent or property manager",
+            "pattern": None,
         }
     if score >= 0.2:
-        return {"action": "keep", "confidence": "medium", "evidence": evidence}
-    return {"action": "keep", "confidence": "low", "evidence": evidence}
+        return {"action": "keep", "confidence": "medium",
+                "evidence": evidence, "pattern": None}
+    return {"action": "keep", "confidence": "low",
+            "evidence": evidence, "pattern": None}
 
 
 def address_kind_from_key(mail_key: str) -> str:
