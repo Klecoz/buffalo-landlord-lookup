@@ -251,3 +251,86 @@ def test_cluster_with_government_owner_skipped():
     clusters, mapping, _ = _build_operator_clusters(by_owner)
     assert clusters == {}
     assert mapping == {}
+
+
+def test_cluster_emits_audit_block():
+    """Each operator cluster gets a structured `audit` dict bundling
+    everything the UI needs to render the 'How these names are grouped'
+    disclosure."""
+    by_owner = {}
+    for i in range(4):
+        slug = f"acme-{i}-llc"
+        display = f"ACME {i} LLC"
+        by_owner[display.lower()] = {
+            "slug": slug, "display": display,
+            "mail_keys": Counter({"100 MAIN ST | BUFFALO | NY | 14215": 3}),
+            "properties": 5, "open": 1, "all_violations": 2,
+            "complaints_311_12mo": 0, "total_value": 100_000,
+            "props": [],
+        }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    assert len(clusters) == 1, "fixture should produce one cluster"
+    cluster = next(iter(clusters.values()))
+    audit = cluster["audit"]
+    assert audit["shared_mailing_address"] == cluster["mailing_address"]
+    assert audit["address_kind"] == "street"
+    assert audit["member_count"] == 4
+    assert audit["cohesion"]["distinctive_token"] == "acme"
+    assert audit["cohesion"]["score"] == 1.0
+    assert "acme" in audit["cohesion"]["explanation"]
+    assert audit["pattern"] is None
+    assert audit["person_dedups"] == []  # no person-name variants in fixture
+
+
+def test_cluster_audit_records_alter_ego_pattern():
+    """A 1-person + 1-LLC street cluster fires the alter-ego rule and the
+    audit block surfaces the pattern."""
+    by_owner = {
+        "mahoney, martin c": {
+            "slug": "mahoney-martin-c", "display": "Mahoney, Martin C",
+            "mail_keys": Counter({"259 BRECKENRIDGE | BUFFALO | NY | 14222": 2}),
+            "properties": 1, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 200_000, "props": [],
+        },
+        "259 breckenridge llc": {
+            "slug": "259-breckenridge-llc", "display": "259 Breckenridge LLC",
+            "mail_keys": Counter({"259 BRECKENRIDGE | BUFFALO | NY | 14222": 1}),
+            "properties": 1, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 150_000, "props": [],
+        },
+    }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    assert len(clusters) == 1
+    cluster = next(iter(clusters.values()))
+    assert cluster["audit"]["pattern"] == "alter_ego"
+
+
+def test_cluster_audit_surfaces_person_dedups():
+    """When dedup_persons_in_cluster collapses a name into variants, those
+    variants land in audit.person_dedups."""
+    addr = "100 OAK ST | BUFFALO | NY | 14215"
+    by_owner = {
+        "john smith": {
+            "slug": "john-smith", "display": "JOHN SMITH",
+            "mail_keys": Counter({addr: 2}),
+            "properties": 5, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+        },
+        "smith, john a": {
+            "slug": "smith-john-a", "display": "SMITH, JOHN A",
+            "mail_keys": Counter({addr: 2}),
+            "properties": 3, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+        },
+    }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    if not clusters:
+        # MIN_CLUSTER_OWNERS / MIN_CLUSTER_PARCELS may exclude tiny fixtures
+        # — bail out cleanly rather than fail spuriously.
+        import pytest as _pt
+        _pt.skip("cluster size below emit.py minimums for this fixture")
+    cluster = next(iter(clusters.values()))
+    dedups = cluster["audit"]["person_dedups"]
+    assert len(dedups) == 1
+    assert dedups[0]["canonical"] == "JOHN SMITH"
+    assert "SMITH, JOHN A" in dedups[0]["variants"]

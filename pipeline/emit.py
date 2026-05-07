@@ -23,6 +23,7 @@ from typing import Any
 from cluster_score import (
     address_kind_from_key,
     classify_cluster,
+    cohesion_details,
     dedup_persons_in_cluster,
 )
 from normalize import normalize_mail_address
@@ -184,14 +185,20 @@ def _build_operator_clusters(
         # Meaningful size.
         if len(owner_norms) < MIN_CLUSTER_OWNERS:
             continue
-        total_parcels = sum(by_owner[o]["properties"] for o in owner_norms)
-        if total_parcels < MIN_CLUSTER_PARCELS:
-            continue
 
         # Cohesion-based classification — see cluster_score.py.
+        # Done before the parcel-count gate so the alter-ego pattern
+        # (1 person + 1 LLC at a shared street address) can bypass it:
+        # those pairs are a valid unmasking signal even at 2 total parcels.
         owner_displays = [by_owner[o]["display"] for o in owner_norms]
         addr_kind = address_kind_from_key(mail_key)
         verdict = classify_cluster(owner_displays, addr_kind)
+
+        total_parcels = sum(by_owner[o]["properties"] for o in owner_norms)
+        is_alter_ego = verdict.get("pattern") == "alter_ego"
+        if total_parcels < MIN_CLUSTER_PARCELS and not is_alter_ego:
+            continue
+
         if verdict["action"] == "drop":
             counts["dropped"] += 1
             continue
@@ -228,12 +235,35 @@ def _build_operator_clusters(
         # corroborates the merge; cross-cluster matches still stay separate).
         owner_groups = dedup_persons_in_cluster(owners_block)
 
+        # Structured audit block — the UI reads this to render the
+        # "How these names are grouped" disclosure. All fields here are
+        # re-shapings of data already on the cluster; no new heuristics.
+        cohesion = cohesion_details(owner_displays)
+        person_dedups = [
+            {"canonical": g["canonical"], "variants": g["variants"]}
+            for g in owner_groups
+            if g.get("variants")
+        ]
+        audit = {
+            "shared_mailing_address": mail_key,
+            "address_kind": addr_kind,
+            "member_count": len(owner_norms),
+            "cohesion": {
+                "score": round(cohesion["score"], 3),
+                "distinctive_token": cohesion["distinctive_token"],
+                "explanation": cohesion["explanation"],
+            },
+            "pattern": verdict.get("pattern"),
+            "person_dedups": person_dedups,
+        }
+
         clusters[slug] = {
             "operator_slug": slug,
             "operator_label": operator_label,
             "mailing_address": mail_key,
             "confidence": verdict["confidence"],
             "evidence": verdict["evidence"],
+            "audit": audit,
             "owners": owners_block,
             "owner_groups": owner_groups,
             "total_properties": totals["properties"],
