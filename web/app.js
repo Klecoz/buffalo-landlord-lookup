@@ -472,6 +472,9 @@ function renderPortfolio(portfolio) {
     </div>
     <div class="addr">${escapeHtml(portfolio.owner_display)}</div>
     ${operatorHint}
+    ${portfolio.operator_slug
+      ? ""
+      : `<p class="evidence sub-note">Single owner — no LLC grouping applied. Properties owned by the same person under shell LLCs with distinct names may appear separately.</p>`}
     ${variants}
 
     <div class="stat-grid">
