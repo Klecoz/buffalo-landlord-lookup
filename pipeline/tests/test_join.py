@@ -125,3 +125,54 @@ def test_concern_score_formula():
 
     p2 = {"code_violations_open": 0, "complaints_311_12mo": 0, "demolished": True}
     assert _compute_concern_score(p2) == 5
+
+
+def test_parcel_record_carries_add_owner():
+    """ADD_OWNER from raw parcel properties is preserved on the parcel record
+    so downstream stages can mine it for cross-LLC identity links."""
+    from join import _build_parcel_records
+    geo = {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "properties": {
+                "PRIMARY_OWNER": "ACME PROPERTIES LLC",
+                "ADD_OWNER": "Smith, John A",
+                "LOC_ST_NBR": "100", "LOC_STREET": "MAIN ST",
+                "LOC_ZIP": "14215",
+                "MAIL_ADDR": "100 MAIN ST", "MAIL_CITY": "BUFFALO",
+                "MAIL_STATE": "NY", "MAIL_ZIP": "14215",
+                "PARCEL_ADDR": "100 MAIN ST",
+                "PRINT_KEY": "ABC", "SBL": "1.00-1-1",
+                "FULL_MARKET_VAL": 0, "PROP_CLASS": 220, "YR_BLT": 1900,
+            },
+            "geometry": {"type": "Point", "coordinates": [-78.8, 42.9]},
+        }],
+    }
+    parcels, _ = _build_parcel_records(geo)
+    assert len(parcels) == 1
+    assert parcels[0]["add_owner"] == "Smith, John A"
+
+
+def test_parcel_record_add_owner_blank_when_missing():
+    """ADD_OWNER absent from properties yields an empty-string field, not KeyError."""
+    from join import _build_parcel_records
+    geo = {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "properties": {
+                "PRIMARY_OWNER": "JONES LLC",
+                "LOC_ST_NBR": "200", "LOC_STREET": "OAK ST",
+                "LOC_ZIP": "14215",
+                "MAIL_ADDR": "200 OAK ST", "MAIL_CITY": "BUFFALO",
+                "MAIL_STATE": "NY", "MAIL_ZIP": "14215",
+                "PARCEL_ADDR": "200 OAK ST",
+                "PRINT_KEY": "XYZ", "SBL": "1.00-1-2",
+                "FULL_MARKET_VAL": 0, "PROP_CLASS": 220, "YR_BLT": 1900,
+            },
+            "geometry": {"type": "Point", "coordinates": [-78.8, 42.9]},
+        }],
+    }
+    parcels, _ = _build_parcel_records(geo)
+    assert parcels[0]["add_owner"] == ""

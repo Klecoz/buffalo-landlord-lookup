@@ -178,6 +178,7 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
             "lng": lng,
             "owner_raw": owner_raw,
             "owner_norm": owner_norm,
+            "add_owner": (props.get("ADD_OWNER") or "").strip(),
             "mail_addr": mail_addr_raw,
             "mail_city": mail_city,
             "mail_state": mail_state,
