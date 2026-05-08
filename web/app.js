@@ -762,6 +762,17 @@ function renderAuditDisclosure(op) {
     <li><span class="audit-key">Member</span> ${escapeHtml(o.display)}
       <span class="sub">(${o.properties} prop${o.properties === 1 ? "" : "s"})</span>
     </li>`).join("");
+  const coOwnerLines = (a.co_owners || []).map(c => `
+    <li><span class="audit-key">Co-owner</span>
+      <strong>${escapeHtml(c.name)}</strong>
+      <span class="sub">(${c.parcels} parcel${c.parcels === 1 ? "" : "s"} in this cluster)</span>
+    </li>`).join("");
+  const linkedOpLines = (a.linked_operators || []).map(L => `
+    <li><span class="audit-key">Linked operator</span>
+      <a href="#/operator/${encodeURIComponent(L.operator_slug)}"
+         onclick="event.preventDefault(); window.openOperator('${escapeHtml(L.operator_slug)}')">${escapeHtml(L.operator_label)}</a>
+      <span class="sub">via ${escapeHtml(L.co_owner)} (${L.parcels} parcel${L.parcels === 1 ? "" : "s"} there)</span>
+    </li>`).join("");
 
   return `
     <details class="audit-details">
@@ -773,6 +784,8 @@ function renderAuditDisclosure(op) {
         ${patternLine}
         ${dedupLines}
         ${memberLines}
+        ${coOwnerLines}
+        ${linkedOpLines}
       </ul>
       <p class="audit-foot sub">${a.member_count} LLC${a.member_count === 1 ? "" : "s"} merged into one operator. Bulk LLC ownership data is not publicly available in NYS, so this is the best inference the public data allows.</p>
     </details>`;
