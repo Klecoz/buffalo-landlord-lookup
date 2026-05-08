@@ -26,6 +26,7 @@ from cluster_score import (
     cohesion_details,
     dedup_persons_in_cluster,
 )
+from co_owner import parse_co_owner
 from normalize import normalize_mail_address
 
 HERE = Path(__file__).resolve().parent
@@ -315,6 +316,10 @@ def emit(joined: dict) -> dict[str, Path]:
         portfolio_complaints_311 = 0
         portfolio_value = 0
         oldest_violation = None
+        # Co-owner aggregation: every parcel's ADD_OWNER, parsed to a stable
+        # key. Same human under different spellings collapses to one entry.
+        co_owner_counts: Counter[frozenset] = Counter()
+        co_owner_display_counts: dict[frozenset, Counter[str]] = defaultdict(Counter)
         for pid in parcel_ids:
             parcel = by_id.get(pid)
             if not parcel:
@@ -348,6 +353,16 @@ def emit(joined: dict) -> dict[str, Path]:
                 "concern_score": parcel["concern_score"],
                 "value": parcel.get("full_market_val", 0) or 0,
             })
+            parsed = parse_co_owner(parcel.get("add_owner") or "")
+            if parsed is not None:
+                co_owner_counts[parsed["key"]] += 1
+                co_owner_display_counts[parsed["key"]][parsed["display"]] += 1
+
+        # Pick the most-common display variant for each co-owner key.
+        co_owner_displays = {
+            k: cnt.most_common(1)[0][0]
+            for k, cnt in co_owner_display_counts.items()
+        }
 
         display = max(owner_displays.items(), key=lambda kv: kv[1])[0] if owner_displays else owner_norm
 
@@ -363,6 +378,8 @@ def emit(joined: dict) -> dict[str, Path]:
             "total_value": portfolio_value,
             "oldest_violation": oldest_violation,
             "props": sorted(props, key=lambda x: -x["concern_score"]),
+            "co_owner_counts": co_owner_counts,
+            "co_owner_displays": co_owner_displays,
         }
 
     # Build operator clusters BEFORE writing owner files so each owner gets its operator_slug.
