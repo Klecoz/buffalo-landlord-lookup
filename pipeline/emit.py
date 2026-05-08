@@ -26,7 +26,7 @@ from cluster_score import (
     cohesion_details,
     dedup_persons_in_cluster,
 )
-from co_owner import parse_co_owner
+from co_owner import parse_co_owner, suppress_common_names
 from normalize import normalize_mail_address
 
 HERE = Path(__file__).resolve().parent
@@ -226,6 +226,22 @@ def _build_operator_clusters(
                 totals[k] += agg[k]
             owner_to_operator[o] = slug
 
+        # Co-owner aggregation across this cluster's member owners.
+        # Sums per-key parcel counts and picks the most-common display
+        # variant for each key (across all members).
+        cluster_co_owner_counts: Counter[frozenset] = Counter()
+        cluster_co_owner_display_counts: dict[frozenset, Counter[str]] = defaultdict(Counter)
+        for o in sorted_owners:
+            agg = by_owner[o]
+            for k, c in agg.get("co_owner_counts", Counter()).items():
+                cluster_co_owner_counts[k] += c
+                # Vote with parcel count for the canonical display variant
+                cluster_co_owner_display_counts[k][agg["co_owner_displays"][k]] += c
+        cluster_co_owner_displays = {
+            k: cnt.most_common(1)[0][0]
+            for k, cnt in cluster_co_owner_display_counts.items()
+        }
+
         # Person-name dedup within the cluster (safe: shared mailing address
         # corroborates the merge; cross-cluster matches still stay separate).
         owner_groups = dedup_persons_in_cluster(owners_block)
@@ -250,6 +266,8 @@ def _build_operator_clusters(
             },
             "pattern": verdict.get("pattern"),
             "person_dedups": person_dedups,
+            "co_owners": [],          # filled in post-pass below
+            "linked_operators": [],   # filled in post-pass below
         }
 
         clusters[slug] = {
@@ -268,6 +286,60 @@ def _build_operator_clusters(
             "total_value": totals["total_value"],
             "properties": sorted(all_props, key=lambda p: -p["concern_score"]),
         }
+        clusters[slug]["_co_owner_counts"] = cluster_co_owner_counts
+        clusters[slug]["_co_owner_displays"] = cluster_co_owner_displays
+
+    # ---- Co-owner cross-cluster post-pass ---------------------------------
+    # Build a global index of co_owner_key → [(operator_slug, parcels)],
+    # apply common-name suppression for the link surface, and attach
+    # `co_owners` + `linked_operators` to each cluster's audit block.
+
+    # Step A — global key-to-operators index
+    co_owner_to_operators: dict[frozenset, list[tuple[str, int]]] = defaultdict(list)
+    for slug, cluster in clusters.items():
+        for k, count in cluster["_co_owner_counts"].items():
+            co_owner_to_operators[k].append((slug, count))
+
+    # Step B — apply suppression: keys appearing in too many distinct
+    # operators are noise for the link surface (kept as raw evidence).
+    linkable_index = suppress_common_names(co_owner_to_operators)
+
+    # Step C — fill per-cluster audit fields
+    CO_OWNERS_TOP_N = 10
+    LINKED_OPS_TOP_N = 10
+    for slug, cluster in clusters.items():
+        co_counts = cluster["_co_owner_counts"]
+        co_displays = cluster["_co_owner_displays"]
+        co_owners = sorted(
+            (
+                {"name": co_displays[k], "parcels": c}
+                for k, c in co_counts.items()
+            ),
+            key=lambda d: -d["parcels"],
+        )[:CO_OWNERS_TOP_N]
+
+        link_rows: list[dict] = []
+        for k in co_counts:
+            if k not in linkable_index:
+                continue
+            for other_slug, parcels in linkable_index[k]:
+                if other_slug == slug:
+                    continue
+                link_rows.append({
+                    "co_owner": co_displays[k],
+                    "operator_slug": other_slug,
+                    "operator_label": clusters[other_slug]["operator_label"],
+                    "parcels": parcels,
+                })
+        link_rows.sort(key=lambda d: -d["parcels"])
+        link_rows = link_rows[:LINKED_OPS_TOP_N]
+
+        cluster["audit"]["co_owners"] = co_owners
+        cluster["audit"]["linked_operators"] = link_rows
+
+        # Strip transient fields so they don't end up in emitted JSON.
+        del cluster["_co_owner_counts"]
+        del cluster["_co_owner_displays"]
 
     return clusters, owner_to_operator, counts
 

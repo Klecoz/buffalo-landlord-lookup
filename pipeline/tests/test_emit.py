@@ -334,3 +334,128 @@ def test_cluster_audit_surfaces_person_dedups():
     assert len(dedups) == 1
     assert dedups[0]["canonical"] == "JOHN SMITH"
     assert "SMITH, JOHN A" in dedups[0]["variants"]
+
+
+def test_cluster_audit_co_owners_field_populated():
+    """When parcels in a cluster carry ADD_OWNER, the cluster audit block
+    surfaces a co_owners list with the human names and parcel counts."""
+    addr = "100 MAIN ST | BUFFALO | NY | 14215"
+    by_owner = {
+        "acme 1 llc": {
+            "slug": "acme-1-llc", "display": "ACME 1 LLC",
+            "mail_keys": Counter({addr: 3}),
+            "properties": 3, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+            "co_owner_counts": Counter({
+                frozenset({"SMITH", "JOHN"}): 2,
+                frozenset({"DOE", "JANE"}): 1,
+            }),
+            "co_owner_displays": {
+                frozenset({"SMITH", "JOHN"}): "Smith, John A",
+                frozenset({"DOE", "JANE"}): "Doe, Jane",
+            },
+        },
+        "acme 2 llc": {
+            "slug": "acme-2-llc", "display": "ACME 2 LLC",
+            "mail_keys": Counter({addr: 2}),
+            "properties": 2, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+            "co_owner_counts": Counter({frozenset({"SMITH", "JOHN"}): 1}),
+            "co_owner_displays": {frozenset({"SMITH", "JOHN"}): "JOHN SMITH"},
+        },
+    }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    assert len(clusters) == 1
+    cluster = next(iter(clusters.values()))
+    co_owners = cluster["audit"]["co_owners"]
+    # Smith should aggregate 2 + 1 = 3 parcels; sorted descending by parcels.
+    assert co_owners[0]["parcels"] == 3
+    assert co_owners[0]["name"] in {"Smith, John A", "JOHN SMITH"}
+    # Jane Doe is also present.
+    assert any(c["name"] == "Doe, Jane" and c["parcels"] == 1 for c in co_owners)
+
+
+def test_cluster_audit_linked_operators_via_shared_co_owner():
+    """Two clusters seeded by different mailing addresses, both with the
+    same human as a co-owner, link to each other via linked_operators."""
+    addr_a = "100 MAIN ST | BUFFALO | NY | 14215"
+    addr_b = "200 OAK ST | BUFFALO | NY | 14215"
+    smith = frozenset({"SMITH", "JOHN"})
+    by_owner = {
+        # Cluster A
+        "acme 1 llc": {
+            "slug": "acme-1-llc", "display": "ACME 1 LLC",
+            "mail_keys": Counter({addr_a: 3}),
+            "properties": 3, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+            "co_owner_counts": Counter({smith: 2}),
+            "co_owner_displays": {smith: "Smith, John A"},
+        },
+        "acme 2 llc": {
+            "slug": "acme-2-llc", "display": "ACME 2 LLC",
+            "mail_keys": Counter({addr_a: 1}),
+            "properties": 1, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+            "co_owner_counts": Counter(), "co_owner_displays": {},
+        },
+        # Cluster B (different mail key, same Smith)
+        "beta 1 llc": {
+            "slug": "beta-1-llc", "display": "BETA 1 LLC",
+            "mail_keys": Counter({addr_b: 3}),
+            "properties": 3, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+            "co_owner_counts": Counter({smith: 1}),
+            "co_owner_displays": {smith: "JOHN SMITH"},
+        },
+        "beta 2 llc": {
+            "slug": "beta-2-llc", "display": "BETA 2 LLC",
+            "mail_keys": Counter({addr_b: 1}),
+            "properties": 1, "open": 0, "all_violations": 0,
+            "complaints_311_12mo": 0, "total_value": 0, "props": [],
+            "co_owner_counts": Counter(), "co_owner_displays": {},
+        },
+    }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    assert len(clusters) == 2
+    slugs = sorted(clusters.keys())
+    a, b = clusters[slugs[0]], clusters[slugs[1]]
+    # A links to B
+    a_links = a["audit"]["linked_operators"]
+    assert any(L["operator_slug"] == b["operator_slug"] for L in a_links), \
+        f"A should link to B; got {a_links}"
+    # B links to A
+    b_links = b["audit"]["linked_operators"]
+    assert any(L["operator_slug"] == a["operator_slug"] for L in b_links), \
+        f"B should link to A; got {b_links}"
+
+
+def test_cluster_audit_common_co_owner_suppressed_from_links():
+    """A co-owner appearing in MORE than MAX_OPERATORS_PER_CO_OWNER (=5)
+    distinct clusters is dropped from linked_operators (still in co_owners)."""
+    from co_owner import MAX_OPERATORS_PER_CO_OWNER
+    smith = frozenset({"SMITH", "JOHN"})
+    by_owner = {}
+    # Build (MAX + 1) tiny clusters, each at its own mailing address,
+    # each carrying Smith as a co-owner. With suppression in force, none
+    # should reference each other via linked_operators on this key.
+    for i in range(MAX_OPERATORS_PER_CO_OWNER + 1):
+        addr = f"{i} GENERIC ST | BUFFALO | NY | 14215"
+        for j in range(2):  # 2 LLCs per cluster
+            slug = f"op-{i}-{j}"
+            by_owner[f"op {i} {j} llc"] = {
+                "slug": slug, "display": f"OP {i} {j} LLC",
+                "mail_keys": Counter({addr: 2}),
+                "properties": 2, "open": 0, "all_violations": 0,
+                "complaints_311_12mo": 0, "total_value": 0, "props": [],
+                "co_owner_counts": Counter({smith: 1}) if j == 0 else Counter(),
+                "co_owner_displays": ({smith: "Smith, John"} if j == 0 else {}),
+            }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    assert len(clusters) == MAX_OPERATORS_PER_CO_OWNER + 1
+    for cluster in clusters.values():
+        # Smith still appears as raw evidence ...
+        names = [c["name"] for c in cluster["audit"]["co_owners"]]
+        assert any("Smith" in n for n in names)
+        # ... but no linked_operator entry uses Smith as the linking key.
+        for L in cluster["audit"]["linked_operators"]:
+            assert L["co_owner"] != "Smith, John"
