@@ -1,0 +1,15 @@
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    environment: 'jsdom',
+    environmentOptions: {
+      jsdom: {
+        url: 'http://localhost/',
+        runScripts: 'dangerously',
+      },
+    },
+    globals: true,
+    setupFiles: ['./tests/setup.js'],
+  },
+})

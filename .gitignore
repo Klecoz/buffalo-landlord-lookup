@@ -11,3 +11,9 @@ venv/
 .DS_Store
 .claude/
 .wrangler/
+web/node_modules/
+web/coverage/
+pipeline/htmlcov/
+.coverage
+# vitest config HMR leftover artifacts
+web/vitest.config.js.timestamp-*.mjs
