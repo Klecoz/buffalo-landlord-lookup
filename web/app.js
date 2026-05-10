@@ -1014,6 +1014,7 @@ function setupSearch() {
 async function loadMeta() {
   try {
     const r = await fetch(`${DATA_BASE}/meta.json`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     state.meta = await r.json();
     const date = (state.meta.generated_at || "").slice(0, 10);
     const c311 = (state.meta.complaints_311_max_date || "").slice(0, 10);

@@ -108,6 +108,29 @@ def test_join_311_window_anchored_on_max_date():
     assert by_addr["100 MAIN"]["complaints_311_12mo"] == 2
 
 
+def test_join_311_window_includes_boundary_day():
+    """The cutoff is calendar-year-back, so a complaint exactly one year
+    before the anchor (same month/day) is included. Guards against the
+    365-day off-by-one across leap years.
+    """
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "100", "LOC_STREET": "Main", "PRIMARY_OWNER": "X", "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    requests = [
+        # Anchor (max date) lands across a leap year — 2024 is a leap year,
+        # so a naive timedelta(days=365) cutoff would land on 2023-05-11 and
+        # exclude the boundary record below.
+        {"subject": "DPIS", "address_number": "100", "address_line_1": "Main",
+         "open_date": "2024-05-10T00:00:00"},
+        {"subject": "DPIS", "address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-05-10T00:00:00"},  # exactly 12 months back — must be IN window
+    ]
+    matched, _ = _join_311(by_addr, requests)
+    assert matched == 2
+    assert by_addr["100 MAIN"]["complaints_311_12mo"] == 2
+
+
 def test_join_demolitions_flags_parcel():
     fc = _parcel_fc([
         {"LOC_ST_NBR": "999", "LOC_STREET": "Demolish Rd", "PRIMARY_OWNER": "X", "SBL": "AAA"},

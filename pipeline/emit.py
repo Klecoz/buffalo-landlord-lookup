@@ -52,9 +52,13 @@ def _slugify(name: str) -> str:
 
 def _atomic_write(path: Path, data: Any) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w") as f:
-        json.dump(data, f, separators=(",", ":"))
-    tmp.replace(path)
+    try:
+        with tmp.open("w") as f:
+            json.dump(data, f, separators=(",", ":"))
+        tmp.replace(path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 # Public/government owners that dominate a raw "most properties" list and
@@ -264,13 +268,16 @@ def _build_operator_clusters(
         cluster_co_owner_display_counts: dict[frozenset, Counter[str]] = defaultdict(Counter)
         for o in sorted_owners:
             agg = by_owner[o]
+            co_displays_o = agg.get("co_owner_displays", {})
             for k, c in agg.get("co_owner_counts", Counter()).items():
                 cluster_co_owner_counts[k] += c
                 # Vote with parcel count for the canonical display variant
-                cluster_co_owner_display_counts[k][agg["co_owner_displays"][k]] += c
+                if k in co_displays_o:
+                    cluster_co_owner_display_counts[k][co_displays_o[k]] += c
         cluster_co_owner_displays = {
             k: cnt.most_common(1)[0][0]
             for k, cnt in cluster_co_owner_display_counts.items()
+            if cnt
         }
 
         # Person-name dedup within the cluster (safe: shared mailing address
@@ -480,6 +487,7 @@ def emit(
         co_owner_displays = {
             k: cnt.most_common(1)[0][0]
             for k, cnt in co_owner_display_counts.items()
+            if cnt
         }
 
         display = max(owner_displays.items(), key=lambda kv: kv[1])[0] if owner_displays else owner_norm

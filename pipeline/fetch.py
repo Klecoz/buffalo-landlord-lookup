@@ -41,9 +41,13 @@ ARC_PAGE = 1000     # ArcGIS REST
 
 def _atomic_write_json(path: Path, data: Any) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w") as f:
-        json.dump(data, f)
-    tmp.replace(path)
+    try:
+        with tmp.open("w") as f:
+            json.dump(data, f)
+        tmp.replace(path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _socrata(dataset_id: str, where: str | None = None) -> list[dict]:

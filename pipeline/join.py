@@ -261,7 +261,14 @@ def _join_311(by_addr: dict[str, dict], requests_311: list[dict]) -> tuple[int, 
             max_date = d
     if max_date:
         anchor = datetime.fromisoformat(max_date.replace("Z", "+00:00"))
-        cutoff_iso = (anchor - timedelta(days=365)).isoformat()[:19]
+        # Calendar-year-back so "last 12 months" is inclusive of the same day
+        # last year (e.g., 2024-05-10 -> 2023-05-10), independent of leap days.
+        try:
+            cutoff = anchor.replace(year=anchor.year - 1)
+        except ValueError:
+            # Anchor is Feb 29 in a leap year; fall back to Feb 28.
+            cutoff = anchor.replace(year=anchor.year - 1, day=28)
+        cutoff_iso = cutoff.isoformat()[:19]
     else:
         cutoff_iso = ""
 
