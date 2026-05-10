@@ -1533,7 +1533,11 @@ async function bootstrap() {
     const isPhone = window.matchMedia("(max-width: 480px)").matches;
     if (onLeaderboards) {
       if (isPhone) {
-        fullyHidePanel();
+        // Collapse the sheet to peek instead of fully hiding it — fully hidden
+        // looks like a blank drawer and there's no parent view to return to.
+        // Peek keeps the leaderboard title visible and the drag handle in reach.
+        if (window.__setSheetSnap) window.__setSheetSnap("sheet-peek");
+        else fullyHidePanel();
       } else if (!document.body.classList.contains("panel-collapsed")) {
         // Stop the bubble so the panel's rail-click handler doesn't immediately
         // re-expand the rail we just collapsed.
