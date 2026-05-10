@@ -391,17 +391,17 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   gap: 10px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .colophon .sep { color: var(--rule-2); }
+#meta-info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ----- Legend ------------------------------------------------------------ */
 .legend {
   position: absolute;
-  bottom: 48px; left: 24px;
-  background: transparent;
-  border: 0;
-  padding: 8px 12px;
+  bottom: 44px; left: 20px;
+  background: rgba(250, 250, 247, 0.88);
+  border: 1px solid var(--rule);
+  padding: 10px 14px 10px 10px;
   font-family: var(--sans);
   font-size: 12px;
   z-index: 20;
@@ -438,7 +438,7 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   border-radius: 0;
   border: 0;
 }
-.dot.s0 { background: var(--s0); }
+.dot.s0 { background: var(--s0); border: 1px solid var(--rule-2); }
 .dot.s1 { background: var(--s1); }
 .dot.s2 { background: var(--s2); }
 .dot.s3 { background: var(--s3); }
@@ -550,7 +550,7 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 /* ----- Reopen-panel button ---------------------------------------------- */
 #reopen-panel {
   position: absolute;
-  top: 24px; right: 24px;
+  top: 120px; right: 10px;
   z-index: 25;
   background: var(--paper);
   color: var(--ink);
@@ -580,7 +580,7 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   font-family: var(--sans);
   font-size: 12px;
   cursor: pointer;
-  max-width: 380px;
+  max-width: calc(100vw - 540px - 396px - 12px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -842,8 +842,8 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   border-radius: 14px 14px 0 0;
   transition: background 120ms;
 }
-.panel-handle:hover,
-.panel-handle:focus-visible { background: var(--paper-2); outline: none; }
+.panel-handle:hover { background: var(--paper-2); }
+.panel-handle:focus-visible { background: var(--paper-2); outline: 2px solid var(--ink); outline-offset: -2px; }
 .panel-handle:active { cursor: grabbing; background: var(--paper-2); }
 .panel-handle > span {
   display: block;
@@ -875,7 +875,7 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 @media (max-width: 880px) and (min-width: 481px) {
   .masthead { padding: 16px 18px 12px; }
   #search-row { top: 70px; left: 18px; right: 18px; width: auto; max-width: none; }
-  #filter-chip { top: auto; bottom: 50px; left: 18px; right: 18px; max-width: none; }
+  #filter-chip { top: auto; bottom: 86px; left: 18px; right: 18px; max-width: none; }
   #panel { width: 360px; padding: 28px 22px 32px; }
   #reopen-panel { top: auto; bottom: 44px; right: 14px; }
   .colophon { font-size: 10.5px; }
@@ -908,7 +908,7 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   #map { bottom: 0; }
   .colophon { display: none; }
   .legend { display: none; }
-  #reopen-panel { display: none; }
+  #reopen-panel { display: block; bottom: 8px; left: 12px; right: auto; top: auto; }
   #filter-chip {
     top: auto;
     left: 12px; right: 12px;
@@ -1062,9 +1062,203 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 
 /* Suppress 300ms tap delay on common interactive elements */
 button, a, .leaderboard li, table.portfolio tbody tr, #search-results li,
-.tabs button, .kind-toggle button, .panel-handle, #filter-chip {
+.tabs button, .kind-toggle button, .panel-handle, #filter-chip,
+.dossier-chip, .copy-link-btn, .csv-btn {
   touch-action: manipulation;
 }
+
+/* dossier filters, violation-type breakdowns, CSV export ================= */
+
+/* ----- Dossier filter row ----------------------------------------------- */
+.dossier-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 10px 0 14px;
+}
+
+/* "Status:" / "When:" labels */
+.filter-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+  /* add a little left breathing room before each label except the first */
+  margin-left: 6px;
+}
+.filter-label:first-child {
+  margin-left: 0;
+}
+
+/* Chip base — outline style (inactive) */
+.dossier-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--rule-2);
+  border-radius: 2px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 100ms, background 100ms, border-color 100ms;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.dossier-chip:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+/* Active chip — filled, ink background */
+.dossier-chip[data-active="true"] {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.dossier-chip[data-active="true"]:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+
+/* Count badge inside a chip */
+.chip-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.dossier-chip[data-active="true"] .chip-count {
+  opacity: 0.85;
+}
+
+/* ----- Header counts (h3 metadata suffix) ------------------------------- */
+.header-counts {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-2);
+  letter-spacing: 0;
+  /* inherit the h3's inline context but look clearly secondary */
+}
+
+/* ----- Violation-type bar chart ----------------------------------------- */
+ul.violation-types {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+ul.violation-types li {
+  display: grid;
+  /* label | fill bar | count */
+  grid-template-columns: minmax(0, 1fr) minmax(40px, 120px) 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 12px;
+  line-height: 1.3;
+}
+ul.violation-types li:last-child {
+  border-bottom: 0;
+}
+
+.vt-label {
+  font-family: var(--sans);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vt-bar {
+  display: block;
+  height: 6px;
+  background: var(--rule);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.vt-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+  border-radius: 1px;
+  transition: width 200ms ease-out;
+}
+
+.vt-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ----- panel-head-actions wrapper + CSV button -------------------------- */
+.panel-head-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* CSV button — visually parallel to .copy-link-btn */
+.csv-btn {
+  font-family: var(--sans);
+  font-size: 12px;
+  background: transparent;
+  color: var(--ink-2);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--rule-2);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.csv-btn:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+/* Transient confirmation state after download — mirrors .copy-link-btn.copied */
+.csv-btn.downloaded {
+  color: var(--signal);
+  text-decoration-color: var(--signal);
+}
+
+/* Phone adjustments for new elements */
+@media (max-width: 480px) {
+  .dossier-filters {
+    gap: 6px;
+    margin: 8px 0 12px;
+  }
+  .dossier-chip {
+    padding: 5px 10px;
+    min-height: 36px;
+  }
+  ul.violation-types li {
+    grid-template-columns: minmax(0, 1fr) minmax(30px, 80px) 28px;
+    gap: 8px;
+  }
+}
+
+/* ======================================================================== */
+
+/* ----- Focus-visible rings for interactive elements --------------------- */
+#filter-chip:focus-visible,
+.tabs button:focus-visible,
+.kind-toggle button:focus-visible,
+.leaderboard li:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* ----- Reduced motion --------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {

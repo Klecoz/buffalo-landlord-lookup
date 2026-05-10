@@ -23,6 +23,8 @@ const state = {
   mapFilter: null,               // { kind: "owner"|"operator", slug, label, count } | null
 };
 
+let _selectParcelToken = 0;
+
 // ---------- helpers ----------
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -36,9 +38,14 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
   );
 }
+function cleanOwnerName(s) {
+  return String(s ?? "").replace(/[;,\s]+$/u, "").trim();
+}
 function fmtMoney(n) {
-  n = Number(n) || 0;
-  if (n === 0) return "—";
+  if (n == null || n === "") return "—";
+  n = Number(n);
+  if (isNaN(n)) return "—";
+  if (n === 0) return "$0";
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000)     return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000)         return `$${Math.round(n / 1_000)}K`;
@@ -90,11 +97,95 @@ function _copyLinkBtnHtml() {
   return `<button class="copy-link-btn" onclick="window.copyCurrentUrl(this)" title="Copy a shareable link to this view">Copy link</button>`;
 }
 
+function _downloadCsvBtnHtml(scope) {
+  return `<button class="csv-btn" onclick="window.downloadPortfolioCsv('${escapeHtml(scope)}', this)" title="Download portfolio as CSV">Download CSV</button>`;
+}
+
+function _violationTypesHtml(types) {
+  if (!Array.isArray(types) || types.length === 0) return "";
+  const max = types[0].count || 1;
+  const rows = types.map(t => {
+    const pct = Math.max(4, Math.round((t.count / max) * 100));
+    return `
+      <li>
+        <span class="vt-label">${escapeHtml(t.code_section)}</span>
+        <span class="vt-bar"><span class="vt-bar-fill" style="width:${pct}%"></span></span>
+        <span class="vt-count">${t.count}</span>
+      </li>`;
+  }).join("");
+  return `
+    <h3>Top violation types</h3>
+    <ul class="violation-types">${rows}</ul>`;
+}
+
 window.openAuditDisclosure = function () {
   const d = document.querySelector("#panel .audit-details");
   if (!d) return;
   d.open = true;
   d.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+// CSV export: builds an RFC-4180-quoted blob from the cached portfolio
+// (state.lastPortfolio) or operator (state.lastOperator) and triggers a
+// download. No external dependencies.
+function _csvEscape(value) {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildPortfolioCsv(scope) {
+  const data = scope === "operator" ? state.lastOperator : state.lastPortfolio;
+  if (!data) return null;
+  const props = data.properties || [];
+  const headers = [
+    "address", "open_violations", "total_violations",
+    "complaints_311_12mo", "value", "demolished",
+    "lat", "lng", "parcel_id",
+  ];
+  const rows = props.map(p => [
+    p.addr,
+    p.violations_open ?? "",
+    p.violations_total ?? "",
+    p.complaints_311_12mo ?? "",
+    p.value ?? "",
+    p.demolished ? "true" : "false",
+    p.lat ?? "",
+    p.lng ?? "",
+    p.id ?? "",
+  ]);
+  const lines = [headers, ...rows].map(r => r.map(_csvEscape).join(","));
+  return lines.join("\r\n") + "\r\n";
+}
+
+function _csvFilename(scope) {
+  const slug = scope === "operator"
+    ? (state.lastOperator?.operator_slug || "operator")
+    : (state.lastPortfolio?._slug || "owner");
+  return `${slug}-${scope}.csv`;
+}
+
+window.downloadPortfolioCsv = function (scope, btn) {
+  const csv = buildPortfolioCsv(scope);
+  if (!csv) return;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = _csvFilename(scope);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = "Downloaded";
+    btn.classList.add("downloaded");
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.classList.remove("downloaded");
+    }, 1500);
+  }
 };
 
 window.copyCurrentUrl = function (btn) {
@@ -341,6 +432,7 @@ function initMap() {
 
 // ---------- views ----------
 async function selectParcel(parcelId) {
+  const myToken = ++_selectParcelToken;
   state.selectedId = parcelId;
   if (state.map.getLayer("parcels-selected")) {
     state.map.setFilter("parcels-selected", ["==", "id", parcelId]);
@@ -376,15 +468,40 @@ async function selectParcel(parcelId) {
 }
 
 function renderDossier(props, dossier) {
-  const violations = (dossier?.violations || []);
-  const complaints = (dossier?.complaints || []);
-  const owner = props.owner || "Owner not on record";
+  const byDateDesc = (a, b) => (b.date || "").localeCompare(a.date || "");
+  const violations = (dossier?.violations || []).slice().sort(byDateDesc);
+  const complaints = (dossier?.complaints || []).slice().sort(byDateDesc);
+  const openCount = violations.filter(v => (v.status || "").toUpperCase() === "ACTIVE").length;
+  const closedCount = violations.length - openCount;
+  const owner = props.owner ? cleanOwnerName(props.owner) : "Owner not on record";
   const portfolioCta =
     props.portfolio_n > 1
       ? `<button class="cta" onclick="window.openPortfolio('${escapeHtml(props.owner_slug)}')">
            This owner has ${props.portfolio_n - 1} other propert${props.portfolio_n - 1 === 1 ? "y" : "ies"} →
          </button>`
       : "";
+
+  const dateChips = (target) => `
+    <span class="filter-label">When:</span>
+    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="all" data-active="true">All time</button>
+    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="365">Last year</button>
+    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="90">Last 90d</button>
+    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="30">Last 30d</button>
+  `;
+
+  const violationFilters = violations.length > 0 ? `
+    <div class="dossier-filters" data-target="violations">
+      <span class="filter-label">Status:</span>
+      <button class="dossier-chip" data-target="violations" data-filter="status" data-value="all" data-active="true">All <span class="chip-count">${violations.length}</span></button>
+      <button class="dossier-chip" data-target="violations" data-filter="status" data-value="active">Open <span class="chip-count">${openCount}</span></button>
+      <button class="dossier-chip" data-target="violations" data-filter="status" data-value="closed">Closed <span class="chip-count">${closedCount}</span></button>
+      ${dateChips("violations")}
+    </div>` : "";
+
+  const complaintFilters = complaints.length > 0 ? `
+    <div class="dossier-filters" data-target="complaints">
+      ${dateChips("complaints")}
+    </div>` : "";
 
   showPanel(`
     <h2>Property Dossier</h2>
@@ -412,23 +529,25 @@ function renderDossier(props, dossier) {
 
     ${portfolioCta}
 
-    <h3>Recent code violations (${violations.length})</h3>
+    <h3 data-section-header="violations">Recent code violations <span class="header-counts" data-counts="violations">— ${violations.length} total · ${openCount} open</span></h3>
     <div class="section-meta">${freshnessPill("violations")}</div>
+    ${violationFilters}
     ${violations.length === 0
       ? `<p class="empty">No code violations on record.</p>`
-      : `<ul class="violations">${violations.slice(0, 10).map(v => `
-          <li>
+      : `<ul class="violations" data-list="violations">${violations.map(v => `
+          <li data-status="${escapeHtml((v.status || "").toUpperCase())}" data-iso="${escapeHtml((v.date || "").slice(0, 10))}">
             <div class="date">${fmtDate(v.date)} · ${escapeHtml(v.status || "")}</div>
             <div>${escapeHtml(v.description || v.code_section || "—")}</div>
           </li>`).join("")}</ul>`
     }
 
-    <h3>Recent 311 housing complaints (${complaints.length})</h3>
+    <h3 data-section-header="complaints">Recent 311 housing complaints <span class="header-counts" data-counts="complaints">— ${complaints.length} total</span></h3>
     <div class="section-meta">${freshnessPill("311")}</div>
+    ${complaintFilters}
     ${complaints.length === 0
       ? `<p class="empty">No housing-related 311 complaints in the last 18 months.</p>`
-      : `<ul class="complaints">${complaints.slice(0, 10).map(c => `
-          <li>
+      : `<ul class="complaints" data-list="complaints">${complaints.map(c => `
+          <li data-iso="${escapeHtml((c.date || "").slice(0, 10))}">
             <div class="date">${fmtDate(c.date)}</div>
             <div>${escapeHtml(c.subject || c.reason || c.type || "—")}</div>
           </li>`).join("")}</ul>`
@@ -439,6 +558,80 @@ function renderDossier(props, dossier) {
       facts about a property — they are not a verdict about any person.
     </div>
   `);
+
+  _wireDossierFilters();
+}
+
+// ---------- dossier filters (status + date range) ----------
+function _dossierMaxDate(target) {
+  const meta = state.meta || {};
+  if (target === "violations") return (meta.code_violations_max_date || "").slice(0, 10);
+  if (target === "complaints") return (meta.complaints_311_max_date || "").slice(0, 10);
+  return "";
+}
+
+function _cutoffIso(maxDateIso, days) {
+  if (!maxDateIso) return "";
+  const anchor = new Date(maxDateIso + "T00:00:00Z");
+  if (isNaN(anchor)) return "";
+  anchor.setUTCDate(anchor.getUTCDate() - days);
+  return anchor.toISOString().slice(0, 10);
+}
+
+function _wireDossierFilters() {
+  const chips = $$("#panel .dossier-chip");
+  if (!chips.length) return;
+  chips.forEach(chip => {
+    chip.addEventListener("click", () => {
+      const { target, filter } = chip.dataset;
+      $$(`#panel .dossier-chip[data-target="${target}"][data-filter="${filter}"]`)
+        .forEach(c => { c.dataset.active = "false"; });
+      chip.dataset.active = "true";
+      applyDossierFilters(target);
+    });
+  });
+  // Run once to set initial counts (renders are pre-filtered to "all").
+  applyDossierFilters("violations");
+  applyDossierFilters("complaints");
+}
+
+function applyDossierFilters(target) {
+  const list = $(`#panel ul[data-list="${target}"]`);
+  if (!list) return;
+  const activeStatus = $(`#panel .dossier-chip[data-target="${target}"][data-filter="status"][data-active="true"]`)?.dataset.value || "all";
+  const activeDate   = $(`#panel .dossier-chip[data-target="${target}"][data-filter="date"][data-active="true"]`)?.dataset.value || "all";
+  const maxDate = _dossierMaxDate(target);
+  const cutoffIso = activeDate === "all" ? "" : _cutoffIso(maxDate, parseInt(activeDate, 10));
+
+  let visible = 0;
+  let visibleOpen = 0;
+  list.querySelectorAll("li").forEach(li => {
+    const status = (li.dataset.status || "").toUpperCase();
+    const iso = li.dataset.iso || "";
+    let show = true;
+    if (activeStatus === "active") show = show && (status === "ACTIVE");
+    else if (activeStatus === "closed") show = show && (status && status !== "ACTIVE");
+    if (cutoffIso) show = show && (iso >= cutoffIso);
+    li.style.display = show ? "" : "none";
+    if (show) {
+      visible++;
+      if (status === "ACTIVE") visibleOpen++;
+    }
+  });
+
+  const counts = $(`#panel [data-counts="${target}"]`);
+  if (counts) {
+    const total = list.querySelectorAll("li").length;
+    if (target === "violations") {
+      counts.textContent = (visible === total)
+        ? `— ${total} total · ${visibleOpen} open`
+        : `— ${visible} of ${total} shown · ${visibleOpen} open`;
+    } else {
+      counts.textContent = (visible === total)
+        ? `— ${total} total`
+        : `— ${visible} of ${total} shown`;
+    }
+  }
 }
 
 window.openPortfolio = async function (slug, opts = {}) {
@@ -486,7 +679,7 @@ function renderPortfolio(portfolio) {
        </button>`
     : "";
 
-  const rows = portfolio.properties.map(p => `
+  const rows = (portfolio.properties || []).map(p => `
     <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
       <td data-label="Address">${escapeHtml(p.addr)}</td>
       <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
@@ -502,7 +695,10 @@ function renderPortfolio(portfolio) {
   showPanel(`
     <div class="panel-head">
       <h2>Owner Portfolio</h2>
-      ${_copyLinkBtnHtml()}
+      <div class="panel-head-actions">
+        ${_copyLinkBtnHtml()}
+        ${_downloadCsvBtnHtml("portfolio")}
+      </div>
     </div>
     <div class="addr">${escapeHtml(portfolio.owner_display)}</div>
     ${operatorHint}
@@ -526,6 +722,8 @@ function renderPortfolio(portfolio) {
       </div>
     </div>
 
+    ${_violationTypesHtml(portfolio.top_violation_types)}
+
     ${operatorCta}
     ${highlightBtn}
 
@@ -546,7 +744,15 @@ function renderPortfolio(portfolio) {
 
 window.gotoParcel = function (id, lat, lng) {
   if (lat && lng) state.map.flyTo({ center: [lng, lat], zoom: 18 });
-  setTimeout(() => selectParcel(id), 600);
+  if (state.map && state.map.loaded?.() && state.map.isStyleLoaded?.()) {
+    selectParcel(id);
+  } else if (state.map) {
+    const gotoToken = ++_selectParcelToken;
+    state.map.once("idle", () => {
+      if (gotoToken !== _selectParcelToken) return;
+      selectParcel(id);
+    });
+  }
 };
 
 // ---------- map filter (highlight an owner/operator's parcels) ----------
@@ -915,7 +1121,7 @@ function renderOperator(op) {
       </li>`;
   }).join("");
 
-  const propsRows = op.properties.slice(0, 200).map(p => `
+  const propsRows = (op.properties || []).slice(0, 200).map(p => `
     <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
       <td data-label="Address">${escapeHtml(p.addr)}</td>
       <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
@@ -927,7 +1133,10 @@ function renderOperator(op) {
   showPanel(`
     <div class="panel-head">
       <h2>Operator</h2>
-      ${_copyLinkBtnHtml()}
+      <div class="panel-head-actions">
+        ${_copyLinkBtnHtml()}
+        ${_downloadCsvBtnHtml("operator")}
+      </div>
     </div>
     <div class="addr">${escapeHtml(op.operator_label)}</div>
     ${confBadge}${serviceAddrBadge}
@@ -944,6 +1153,8 @@ function renderOperator(op) {
       <div class="stat"><div class="num">${op.total_complaints_311_12mo}</div><div class="label">311 (12mo)</div></div>
       <div class="stat"><div class="num">${fmtMoney(op.total_value)}</div><div class="label">Portfolio value</div></div>
     </div>
+
+    ${_violationTypesHtml(op.top_violation_types)}
 
     ${highlightBtn}
 
@@ -999,7 +1210,11 @@ function setupSearch() {
     if (!isNaN(lat) && !isNaN(lng)) {
       state.map.flyTo({ center: [lng, lat], zoom: 18 });
       // Wait for the fly + tile load before trying to read the rendered feature
-      state.map.once("idle", () => selectParcel(li.dataset.id));
+      const searchToken = ++_selectParcelToken;
+      state.map.once("idle", () => {
+        if (searchToken !== _selectParcelToken) return;
+        selectParcel(li.dataset.id);
+      });
     } else {
       selectParcel(li.dataset.id);
     }
@@ -1020,7 +1235,7 @@ async function loadMeta() {
     const c311 = (state.meta.complaints_311_max_date || "").slice(0, 10);
     const c311Note = c311 ? ` · 311 data through ${c311}` : "";
     $("#meta-info").textContent =
-      `Refreshed ${date} · ${state.meta.parcels.toLocaleString()} parcels · ${state.meta.owners.toLocaleString()} owners${c311Note}`;
+      `Refreshed ${date} · ${(state.meta.parcels ?? 0).toLocaleString()} parcels · ${(state.meta.owners ?? 0).toLocaleString()} owners${c311Note}`;
     const issueEl = $("#issue-date");
     if (issueEl && date) issueEl.textContent = `Public records · Buffalo, N.Y. · refreshed ${date}`;
   } catch {
@@ -1060,6 +1275,11 @@ async function loadTopOperators() {
 
 function applyHashRoute() {
   const hash = location.hash;
+  // Clear the search input address label when navigating away from a parcel
+  if (!hash.match(/^#\/parcel\//)) {
+    const searchInput = $("#search");
+    if (searchInput) searchInput.value = "";
+  }
   let m;
   if ((m = hash.match(/^#\/parcel\/(.+)$/))) {
     const id = decodeURIComponent(m[1]);
@@ -1081,6 +1301,12 @@ function applyHashRoute() {
     renderLeaderboards();
   } else if (!hash) {
     hidePanel();
+  } else {
+    // Unknown hash — reset state and show leaderboards
+    state.selectedId = null;
+    state.lastPortfolio = null;
+    state.lastOperator = null;
+    renderLeaderboards();
   }
 }
 
@@ -1177,11 +1403,16 @@ function setupBottomSheet() {
 async function bootstrap() {
   $("#filter-chip").addEventListener("click", clearMapFilter);
   $("#panel-close").addEventListener("click", () => {
-    // If we're on the leaderboard view already, fully hide; otherwise return to leaderboards.
-    if (!state.selectedId && !location.hash) {
+    state.selectedId = null;
+    state.lastPortfolio = null;
+    state.lastOperator = null;
+    // From a dossier/operator/owner route, go back to leaderboards.
+    // From leaderboards (or empty hash), fully hide so the user can see the map.
+    const onLeaderboards = !location.hash || /^#\/top\//.test(location.hash);
+    if (onLeaderboards) {
       fullyHidePanel();
     } else {
-      hidePanel();
+      location.hash = "";
     }
   });
   $("#reopen-panel").addEventListener("click", () => {
@@ -1239,6 +1470,10 @@ export {
   applyMapFilter,
   clearMapFilter,
   updateFilterChip,
+  // dossier filters
+  applyDossierFilters,
+  // CSV export
+  buildPortfolioCsv,
   // search wiring (tests call this directly because the bootstrap's
   // DOMContentLoaded already fired by the time test files import)
   setupSearch,

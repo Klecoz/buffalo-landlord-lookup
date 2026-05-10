@@ -129,11 +129,11 @@ describe('fmtDate', () => {
 // ---------------------------------------------------------------------------
 
 describe('fmtMoney', () => {
-  it('returns em-dash for zero', () => {
-    expect(fmtMoney(0)).toBe('—')
+  it('returns $0 for zero (distinguishable from missing data)', () => {
+    expect(fmtMoney(0)).toBe('$0')
   })
 
-  it('returns em-dash for falsy non-number', () => {
+  it('returns em-dash for null, undefined, and empty string', () => {
     expect(fmtMoney(null)).toBe('—')
     expect(fmtMoney(undefined)).toBe('—')
     expect(fmtMoney('')).toBe('—')
