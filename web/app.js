@@ -4,7 +4,7 @@
 //   - Dossier: clicked parcel detail
 //   - Portfolio: every parcel an owner has
 
-const BUFFALO = { lng: -78.8784, lat: 42.8864, zoom: 12 };
+const BUFFALO = { lng: -78.8784, lat: 42.8864, zoom: 13.5 };
 
 // Where the JSON artifacts live. Local dev: "data". Prod: set window.DATA_BASE
 // to your R2 public URL (e.g. "https://pub-xxx.r2.dev") in index.html before app.js loads.
@@ -707,7 +707,7 @@ function renderPortfolio(portfolio) {
       : `<p class="evidence sub-note">Single owner — no LLC grouping applied. Properties owned by the same person under shell LLCs with distinct names may appear separately.</p>`}
     ${variants}
 
-    <div class="stat-grid">
+    <div class="stat-grid stat-grid--compact">
       <div class="stat">
         <div class="num">${portfolio.total_properties}</div>
         <div class="label">Properties</div>
@@ -1138,13 +1138,16 @@ function renderOperator(op) {
         ${_downloadCsvBtnHtml("operator")}
       </div>
     </div>
-    <div class="addr">${escapeHtml(op.operator_label)}</div>
-    ${confBadge}${serviceAddrBadge}
+    <div class="addr-row">
+      <div class="addr">${escapeHtml(op.operator_label)}</div>
+      ${confBadge}${serviceAddrBadge}
+    </div>
     ${evidenceLine}
     <p class="empty" style="margin:2px 0 12px;">Mailing address: <strong>${escapeHtml(op.mailing_address)}</strong></p>
+    <div class="dossier-freshness">${freshnessPill("violations")} ${freshnessPill("311")}</div>
     ${renderAuditDisclosure(op)}
 
-    <div class="stat-grid">
+    <div class="stat-grid stat-grid--compact">
       <div class="stat"><div class="num">${op.total_properties}</div><div class="label">Properties</div></div>
       <div class="stat ${op.total_open_violations > 50 ? "bad" : op.total_open_violations > 10 ? "warn" : ""}">
         <div class="num">${op.total_open_violations}</div><div class="label">Open violations</div>
@@ -1154,9 +1157,9 @@ function renderOperator(op) {
       <div class="stat"><div class="num">${fmtMoney(op.total_value)}</div><div class="label">Portfolio value</div></div>
     </div>
 
-    ${_violationTypesHtml(op.top_violation_types)}
-
     ${highlightBtn}
+
+    ${_violationTypesHtml(op.top_violation_types)}
 
     <h3>Constituent LLCs (${op.owners.length})</h3>
     <ul class="leaderboard llc-list">${ownersList}</ul>

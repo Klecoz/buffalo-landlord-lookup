@@ -230,6 +230,27 @@ button { font-family: inherit; }
 }
 #panel .owner strong { font-weight: 500; color: var(--ink); }
 
+/* ----- Title row: name + conf badge inline ------------------------------ */
+.addr-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 2px 0 6px;
+}
+.addr-row .addr { margin: 0; }
+.addr-row .conf-badge { margin: 0; flex-shrink: 0; }
+.addr-row .service-addr-badge { margin: 0; flex-shrink: 0; }
+
+/* ----- Freshness summary above stat grid -------------------------------- */
+.dossier-freshness {
+  margin: 8px 0 12px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dossier-freshness .freshness-pill { margin-left: 0; }
+
 /* Violations / complaints */
 #panel ul.violations,
 #panel ul.complaints {
@@ -582,6 +603,52 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   border-left-color: var(--ink);
 }
 .leaderboard.llc-list .stat-num { font-size: 12.5px; }
+
+/* ----- Panel collapse (desktop) ---------------------------------------- */
+#panel-collapse {
+  position: absolute;
+  top: 14px; left: 10px;
+  background: none;
+  border: 0;
+  color: var(--ink-2);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 100ms;
+  z-index: 2;
+}
+#panel-collapse:hover { color: var(--ink); }
+
+body.panel-collapsed #panel {
+  width: 36px;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+body.panel-collapsed #panel-content,
+body.panel-collapsed #panel-close {
+  display: none;
+}
+body.panel-collapsed #panel-collapse {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+}
+
+/* On phone, collapse toggle is hidden — bottom sheet replaces it */
+@media (max-width: 480px) {
+  #panel-collapse { display: none; }
+  body.panel-collapsed #panel {
+    width: 100%;
+    padding: 38px 18px 26px;
+    cursor: auto;
+    overflow-y: auto;
+  }
+  body.panel-collapsed #panel-content { display: block; }
+  body.panel-collapsed #panel-close { display: block; }
+}
 
 /* ----- Reopen-panel button ---------------------------------------------- */
 #reopen-panel {
