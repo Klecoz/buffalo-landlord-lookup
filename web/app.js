@@ -1317,6 +1317,57 @@ function setupHashRouting() {
   window.addEventListener("hashchange", applyHashRoute);
 }
 
+// ---------- panel collapse (desktop only) ----------
+function setupPanelCollapse() {
+  const btn = $("#panel-collapse");
+  const panel = $("#panel");
+  if (!btn || !panel) return;
+
+  const isPhone = () => window.matchMedia("(max-width: 480px)").matches;
+
+  function setCollapsed(collapsed) {
+    if (collapsed) {
+      document.body.classList.add("panel-collapsed");
+      btn.setAttribute("aria-label", "Expand panel");
+      btn.setAttribute("title", "Expand panel");
+      btn.textContent = "›";
+    } else {
+      document.body.classList.remove("panel-collapsed");
+      btn.setAttribute("aria-label", "Collapse panel");
+      btn.setAttribute("title", "Collapse panel");
+      btn.textContent = "‹";
+    }
+  }
+
+  // Restore from localStorage on load.
+  if (!isPhone() && localStorage.getItem("panelCollapsed") === "true") {
+    setCollapsed(true);
+  }
+
+  btn.addEventListener("click", (e) => {
+    if (isPhone()) return;
+    e.stopPropagation();
+    const nowCollapsed = !document.body.classList.contains("panel-collapsed");
+    setCollapsed(nowCollapsed);
+    localStorage.setItem("panelCollapsed", String(nowCollapsed));
+  });
+
+  // Clicking the rail (collapsed panel) expands it.
+  panel.addEventListener("click", (e) => {
+    if (!document.body.classList.contains("panel-collapsed")) return;
+    setCollapsed(false);
+    localStorage.setItem("panelCollapsed", "false");
+  });
+
+  // On resize: if phone, remove collapsed class (bottom sheet takes over),
+  // but leave localStorage untouched so desktop remembers.
+  window.addEventListener("resize", () => {
+    if (isPhone() && document.body.classList.contains("panel-collapsed")) {
+      document.body.classList.remove("panel-collapsed");
+    }
+  });
+}
+
 // ---------- bottom sheet (phones only) ----------
 function setupBottomSheet() {
   const panel = $("#panel");
@@ -1421,6 +1472,7 @@ async function bootstrap() {
   $("#reopen-panel").addEventListener("click", () => {
     renderLeaderboards();
   });
+  setupPanelCollapse();
   initMap();
   setupSearch();
   setupHashRouting();
