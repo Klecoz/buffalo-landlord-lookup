@@ -339,9 +339,10 @@ function initMap() {
           "fill-color": colorExpr,
           "fill-opacity": [
             "interpolate", ["linear"], ["zoom"],
-            13, 0,
-            15, 0.35,
-            18, 0.55,
+            11, 0,
+            13, 0.35,
+            15, 0.5,
+            18, 0.6,
           ],
         },
         filter: ["==", "$type", "Polygon"],
