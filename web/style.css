@@ -1149,17 +1149,17 @@ body.panel-collapsed #panel-collapse {
     border: 1px solid var(--rule);
     border-radius: 12px;
   }
-  .legend-label-left { display: none; } /* hide verbose label on mobile */
-  .legend-ramp { display: flex; flex-direction: row; }
-  .legend-step { width: 16px; height: 8px; }
-  /* Show only end-labels (first + last) */
-  .legend-ticks {
-    width: auto;
-    gap: 4px;
-    font-size: 9px;
+  /* Keep the title — "none … demolished" alone misreads as a demolition ramp.
+     Title + gradient already conveys "lighter = fewer, darker = more". */
+  .legend-label-left {
+    display: inline;
+    font-size: 10px;
+    color: var(--ink-2);
+    font-weight: 500;
   }
-  .legend-ticks span:not(:first-child):not(:last-child) { display: none; }
-  .legend-ticks span:first-child::after { content: " …"; }
+  .legend-ramp { display: flex; flex-direction: row; }
+  .legend-step { width: 14px; height: 8px; }
+  .legend-ticks { display: none; } /* drop ticks on mobile — the title carries the meaning */
 
   /* Hide legend when sheet is at half or full */
   body:has(#panel.sheet-half) .legend,
