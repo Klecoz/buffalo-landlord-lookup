@@ -22,7 +22,8 @@ from typing import Iterable, Optional
 # and would otherwise fake a 100% cohesion score across any cluster.
 _STEM_STOPWORDS = frozenset({
     # Business form
-    "llc", "inc", "corp", "co", "lp", "llp", "ltd", "trust",
+    "llc", "inc", "corp", "corporation", "corporations", "co", "lp", "llp",
+    "ltd", "trust",
     # Conjunctions / articles
     "the", "of", "and",
     # Generic real-estate biz tokens — present across unrelated landlords,
@@ -31,10 +32,22 @@ _STEM_STOPWORDS = frozenset({
     "rental", "investments", "investment", "group", "enterprises",
     "enterprise", "management", "mgmt", "associates", "partners",
     "partnership", "real", "estate",
-    # Geographic noise — street suffixes and Buffalo-specific tokens that
-    # show up in many unrelated owner names (e.g. "Elm Street LLC" + "Main
-    # Street LLC" would otherwise fake cohesion via "street").
-    "street", "road", "avenue", "ave", "lane", "drive", "buffalo", "main",
+    # Generic descriptors that recur across unrelated operators. Audited
+    # against the live operator index — each was selected as the
+    # "distinctive" cohesion token in 6+ unrelated clusters before being
+    # dropped here.
+    "development", "developments", "apartments", "apartment", "housing",
+    "community", "communities", "construction", "international",
+    # Geographic noise — street suffixes, state/region tokens, and Buffalo-
+    # specific names that show up in many unrelated owner names (e.g.
+    # "Elm Street LLC" + "Main Street LLC" would otherwise fake cohesion
+    # via "street").
+    "street", "st", "road", "rd", "avenue", "ave", "lane", "drive", "blvd",
+    "buffalo", "main", "ny", "wny",
+    # Personal-name suffixes / honorifics — not identity. "md" is the
+    # Bangladeshi-American naming particle (Md. = Mohammad), which appears
+    # in ~100 unrelated owner records here.
+    "jr", "sr", "ii", "iii", "iv", "md",
 })
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
