@@ -101,57 +101,10 @@ function _downloadCsvBtnHtml(scope) {
   return `<button class="csv-btn" onclick="window.downloadPortfolioCsv('${escapeHtml(scope)}', this)" title="Download portfolio as CSV">Download CSV</button>`;
 }
 
-// On mobile (≤480px) collapse secondary actions into a ⋯ overflow menu.
-// On desktop render them inline (existing behaviour).
 function _panelHeadActionsHtml(scope) {
   const copyBtn = _copyLinkBtnHtml();
   const csvBtn = scope ? _downloadCsvBtnHtml(scope) : "";
-  const inlineActions = `${copyBtn}${csvBtn}`;
-  if (!window.matchMedia("(max-width: 480px)").matches) {
-    return `<div class="panel-head-actions">${inlineActions}</div>`;
-  }
-  // Mobile: single ⋯ button + popover
-  const id = `dossier-overflow-${Math.random().toString(36).slice(2, 7)}`;
-  return `
-    <div class="panel-head-actions dossier-actions--overflow">
-      <button type="button" class="dossier-actions__menu-btn" aria-label="More actions" aria-expanded="false" aria-haspopup="true" data-overflow-id="${id}">⋯</button>
-      <div class="dossier-actions__popover" id="${id}" role="menu" hidden>
-        ${copyBtn}
-        ${csvBtn}
-      </div>
-    </div>`;
-}
-
-// Wire overflow menus inside the panel (called after showPanel renders HTML).
-function _wireDossierOverflow() {
-  $$("#panel .dossier-actions__menu-btn").forEach(btn => {
-    const popover = document.getElementById(btn.dataset.overflowId);
-    if (!popover) return;
-
-    const open = () => {
-      popover.hidden = false;
-      btn.setAttribute("aria-expanded", "true");
-    };
-    const close = () => {
-      popover.hidden = true;
-      btn.setAttribute("aria-expanded", "false");
-    };
-
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      popover.hidden ? open() : close();
-    });
-
-    // Close on outside click
-    document.addEventListener("click", (e) => {
-      if (!popover.hidden && !popover.contains(e.target) && e.target !== btn) close();
-    });
-
-    // Close on ESC
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !popover.hidden) close();
-    });
-  });
+  return `<div class="panel-head-actions">${copyBtn}${csvBtn}</div>`;
 }
 
 function _violationTypesHtml(types) {
@@ -292,8 +245,6 @@ function showPanel(html) {
       window.toggleMapHighlight(btn.dataset.kind, btn.dataset.slug, btn.dataset.label);
     });
   });
-  // Re-wire mobile overflow menus.
-  _wireDossierOverflow();
 }
 function hidePanel() {
   // "Close" returns to leaderboards rather than hiding the panel entirely;
@@ -922,6 +873,11 @@ window.toggleMapHighlight = function (kind, slug, label) {
   } else if (state.lastPortfolio) {
     renderPortfolio(state.lastPortfolio);
   }
+  // On phones, collapse the sheet to peek when turning highlight ON so the
+  // user actually sees what got highlighted on the map.
+  if (turningOn && window.matchMedia("(max-width: 480px)").matches && window.__setSheetSnap) {
+    window.__setSheetSnap("sheet-peek");
+  }
 };
 
 // ---------- leaderboards ----------
@@ -1023,7 +979,7 @@ function renderLeaderboards() {
       if (!tip_el) {
         tip_el = document.createElement("div");
         tip_el.id = "leaderboard-info-tip";
-        tip_el.className = "dossier-actions__popover info-tip-popover";
+        tip_el.className = "info-tip-popover";
         tip_el.setAttribute("role", "tooltip");
         document.body.appendChild(tip_el);
       }
@@ -1476,17 +1432,6 @@ function setupBottomSheet() {
   if (!handle) return;
   const isPhone = () => window.matchMedia("(max-width: 480px)").matches;
 
-  // Inject collapse button (visible only when sheet-full is active)
-  let collapseBtn = document.getElementById("sheet-collapse-btn");
-  if (!collapseBtn) {
-    collapseBtn = document.createElement("button");
-    collapseBtn.id = "sheet-collapse-btn";
-    collapseBtn.type = "button";
-    collapseBtn.setAttribute("aria-label", "Collapse sheet");
-    collapseBtn.textContent = "▾ Collapse";
-    panel.insertBefore(collapseBtn, panel.querySelector("#panel-content"));
-  }
-
   const SNAPS = ["sheet-peek", "sheet-half", "sheet-full"];
   const setSnap = (name) => {
     SNAPS.forEach(c => panel.classList.remove(c));
@@ -1504,11 +1449,8 @@ function setupBottomSheet() {
       renderLeaderboards();
     }
   };
-
-  // Wire collapse button: sheet-full → sheet-half
-  collapseBtn.addEventListener("click", () => {
-    setSnap("sheet-half");
-  });
+  // Expose so other handlers (Highlight on map) can collapse the sheet.
+  window.__setSheetSnap = setSnap;
   const currentSnap = () =>
     SNAPS.find(c => panel.classList.contains(c)) || "sheet-half";
 

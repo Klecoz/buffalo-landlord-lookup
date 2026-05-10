@@ -730,14 +730,23 @@ body.panel-collapsed #panel-collapse {
    chip treatment inside the leaderboard panel. */
 .filter-pill,
 #panel .tabs button {
-  padding: 6px 12px;
-  border-radius: 16px;
+  padding: 8px 14px;
+  border-radius: 18px;
   border: 1px solid var(--rule);
   background: var(--paper);
   color: var(--ink-2);
   font-size: 12.5px;
-  min-height: 32px;
+  min-height: 36px;
   white-space: nowrap;
+}
+/* The chip row doesn't need the underline rule meant for tab-style buttons.
+   Strip it and give the pill row breathing room above and below. */
+#panel .tabs:has(button.filter-pill),
+#panel .tabs:has(button[data-board]) {
+  border-bottom: 0;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 12px 0 18px;
 }
 .filter-pill[aria-pressed="true"],
 .filter-pill.active,
@@ -1545,67 +1554,7 @@ ul.violation-types li:last-child {
 
 /* mobile JS additions ----- */
 
-/* A. Dossier action overflow menu (≤480px only) */
-.dossier-actions__menu-btn {
-  display: none; /* hidden on desktop */
-}
-
-@media (max-width: 480px) {
-  .dossier-actions--overflow {
-    position: relative;
-  }
-  .dossier-actions__menu-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    background: var(--paper);
-    font-size: 20px;
-    line-height: 1;
-    cursor: pointer;
-    color: var(--ink);
-    padding: 0;
-  }
-  .dossier-actions__popover {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 80;
-    background: var(--paper);
-    border: 1px solid var(--rule);
-    border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0,0,0,.12);
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 160px;
-  }
-  .dossier-actions__popover[hidden] { display: none; }
-  .dossier-actions__popover .copy-link-btn,
-  .dossier-actions__popover .csv-btn {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 8px 10px;
-    border-radius: 6px;
-    border: none;
-    background: transparent;
-    font-family: var(--sans);
-    font-size: 14px;
-    color: var(--ink);
-    cursor: pointer;
-  }
-  .dossier-actions__popover .copy-link-btn:hover,
-  .dossier-actions__popover .csv-btn:hover {
-    background: var(--surface);
-  }
-}
-
-/* B. ⓘ info tooltip for leaderboard tab labels (mobile only) */
+/* ⓘ info tooltip for leaderboard tab labels (mobile only) */
 .info-btn {
   display: none; /* hidden on desktop */
 }
@@ -1646,31 +1595,3 @@ ul.violation-types li:last-child {
 }
 .info-tip-popover[hidden] { display: none; }
 
-/* C. Sheet-full collapse button (mobile only) */
-#sheet-collapse-btn {
-  display: none; /* hidden until sheet-full */
-}
-
-@media (max-width: 480px) {
-  #sheet-collapse-btn {
-    display: none; /* default hidden */
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    width: 100%;
-    padding: 8px 16px;
-    background: var(--paper);
-    border: none;
-    border-bottom: 1px solid var(--rule);
-    font-family: var(--sans);
-    font-size: 14px;
-    color: var(--ink-2);
-    cursor: pointer;
-    text-align: center;
-    letter-spacing: 0.02em;
-  }
-  #sheet-collapse-btn:hover { color: var(--ink); }
-  #panel.sheet-full #sheet-collapse-btn {
-    display: block;
-  }
-}
