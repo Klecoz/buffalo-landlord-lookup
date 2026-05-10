@@ -114,6 +114,8 @@ button { font-family: inherit; }
   max-height: 320px;
   overflow-y: auto;
   display: none;
+  z-index: 60;
+  position: relative;
 }
 #search-results.open { display: block; }
 #search-results li {
@@ -723,6 +725,40 @@ body.panel-collapsed #panel-collapse {
 }
 #filter-chip:hover .clear { color: var(--signal); }
 
+/* ----- Filter pills (leaderboard board tabs styled as chips) ------------ */
+/* .filter-pill is used when JS renders them as pills; .tabs button gets
+   chip treatment inside the leaderboard panel. */
+.filter-pill,
+#panel .tabs button {
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  min-height: 32px;
+  white-space: nowrap;
+}
+.filter-pill[aria-pressed="true"],
+.filter-pill.active,
+#panel .tabs button.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.filter-pill:hover,
+#panel .tabs button:hover {
+  color: var(--ink);
+  border-color: var(--ink-2);
+}
+.filter-pill[aria-pressed="true"]:hover,
+.filter-pill.active:hover,
+#panel .tabs button.active:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+  color: var(--paper);
+}
+
 /* ----- Empty / error ---------------------------------------------------- */
 .empty {
   color: var(--ink-2);
@@ -1021,14 +1057,29 @@ body.panel-collapsed #panel-collapse {
 
 /* ----- Phone (≤480px) — bottom sheet over map --------------------------- */
 @media (max-width: 480px) {
-  /* Chrome */
-  .masthead { padding: 12px 14px 8px; }
+  /* Chrome — contrast plate behind masthead + search-row */
+  .masthead {
+    padding: 12px 14px 8px;
+    background: linear-gradient(to bottom, var(--paper) 0%, var(--paper) 60%, transparent 100%);
+    padding-bottom: 20px; /* extend so gradient has room to fade */
+  }
   .masthead-title { font-size: 18px; }
-  .masthead-meta { display: none; }
+
+  /* Re-show masthead-meta on mobile — smaller font, inside the plate */
+  .masthead-meta {
+    display: block;
+    font-size: 10.5px;
+    color: var(--ink-2);
+    margin-top: 2px;
+  }
 
   #search-row {
-    top: 44px; left: 12px; right: 12px;
+    top: 62px; left: 0; right: 0;
     width: auto; max-width: none;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    padding: 0 12px 6px;
+    z-index: 26; /* above panel (30) — but #search-results is 60 */
   }
   #search {
     padding: 12px 0;
@@ -1038,15 +1089,88 @@ body.panel-collapsed #panel-collapse {
   #search-results { max-height: 40vh; }
   #search-results li { padding: 12px 14px; min-height: 44px; }
 
-  /* Hide MapLibre nav controls on phones — pinch-to-zoom is native; the
-     controls otherwise overlap the search bar's right edge. */
-  .maplibregl-ctrl-top-right { display: none; }
+  /* Re-show MapLibre nav controls on phones, repositioned below search row */
+  .maplibregl-ctrl-top-right {
+    display: block;
+    top: 110px !important;
+    right: 12px !important;
+  }
 
   /* Map fills below the search row; sheet floats above */
   #map { bottom: 0; }
-  .colophon { display: none; }
-  .legend { display: none; }
-  #reopen-panel { display: block; bottom: 8px; left: 12px; right: auto; top: auto; }
+
+  /* Colophon: compact single line above peek, hidden when sheet expands */
+  .colophon {
+    display: flex;
+    position: fixed;
+    bottom: 132px;
+    left: 0; right: 0;
+    height: auto;
+    min-height: 0;
+    padding: 4px 12px;
+    font-size: 10px;
+    z-index: 18;
+    background: rgba(250, 250, 247, 0.88);
+    border-top: 1px solid var(--rule);
+    white-space: nowrap;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  /* Hide non-essential colophon children — keep only the disclaimer */
+  .colophon > *:not(:last-child) { display: none; }
+  .colophon > *:last-child { pointer-events: auto; }
+
+  /* Hide colophon when sheet is at half or full */
+  body:has(#panel.sheet-half) .colophon,
+  body:has(#panel.sheet-full) .colophon { display: none; }
+
+  /* Legend: compact horizontal pill above peek line */
+  .legend {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    position: fixed;
+    bottom: 148px; /* above colophon strip */
+    left: 12px;
+    padding: 5px 8px;
+    font-size: 10px;
+    z-index: 18;
+    background: rgba(250, 250, 247, 0.9);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+  }
+  .legend-label-left { display: none; } /* hide verbose label on mobile */
+  .legend-ramp { display: flex; flex-direction: row; }
+  .legend-step { width: 16px; height: 8px; }
+  /* Show only end-labels (first + last) */
+  .legend-ticks {
+    width: auto;
+    gap: 4px;
+    font-size: 9px;
+  }
+  .legend-ticks span:not(:first-child):not(:last-child) { display: none; }
+  .legend-ticks span:first-child::after { content: " …"; }
+
+  /* Hide legend when sheet is at half or full */
+  body:has(#panel.sheet-half) .legend,
+  body:has(#panel.sheet-full) .legend { display: none; }
+
+  /* Reopen-panel: show at peek state too; styled as small pill bottom-left */
+  #reopen-panel {
+    display: none; /* default hidden on phone */
+    bottom: 8px; left: 12px; right: auto; top: auto;
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 12px;
+  }
+
+  /* Show when panel is hidden OR at peek — override .hidden class */
+  body:has(#panel.hidden) #reopen-panel,
+  body:has(#panel.sheet-peek) #reopen-panel {
+    display: block !important;
+  }
+
   #filter-chip {
     top: auto;
     left: 12px; right: 12px;
@@ -1088,7 +1212,8 @@ body.panel-collapsed #panel-collapse {
     height: 55vh;
   }
   #panel.sheet-full {
-    height: 92vh;
+    height: 100vh;
+    padding-top: max(38px, env(safe-area-inset-top, 12px));
   }
   /* While the user is dragging the handle, freeze the inner scroll so the
      gesture only resizes the sheet — not the content underneath. */
@@ -1111,6 +1236,18 @@ body.panel-collapsed #panel-collapse {
   #panel h3 { margin-top: 18px; padding-top: 10px; }
   .stat-grid { gap: 16px 22px; }
   .stat .num { font-size: 22px; }
+
+  /* Stat-grid: 4-stat layout = 2×2 */
+  .stat-grid--compact {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px 16px;
+  }
+  /* n=5: last item spans full width, left-aligned */
+  .stat-grid--compact:has(.stat:nth-child(5)) .stat:nth-child(5) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
 
   /* Wider tap targets on common interactive elements */
   button.cta { padding: 12px 14px; min-height: 44px; }
@@ -1194,7 +1331,7 @@ body.panel-collapsed #panel-collapse {
 @supports (height: 100dvh) {
   @media (max-width: 480px) {
     #panel.sheet-half { height: 55dvh; }
-    #panel.sheet-full { height: 92dvh; }
+    #panel.sheet-full { height: 100dvh; }
   }
 }
 
@@ -1403,5 +1540,137 @@ ul.violation-types li:last-child {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+/* mobile JS additions ----- */
+
+/* A. Dossier action overflow menu (≤480px only) */
+.dossier-actions__menu-btn {
+  display: none; /* hidden on desktop */
+}
+
+@media (max-width: 480px) {
+  .dossier-actions--overflow {
+    position: relative;
+  }
+  .dossier-actions__menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--paper);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--ink);
+    padding: 0;
+  }
+  .dossier-actions__popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 80;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 160px;
+  }
+  .dossier-actions__popover[hidden] { display: none; }
+  .dossier-actions__popover .copy-link-btn,
+  .dossier-actions__popover .csv-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .dossier-actions__popover .copy-link-btn:hover,
+  .dossier-actions__popover .csv-btn:hover {
+    background: var(--surface);
+  }
+}
+
+/* B. ⓘ info tooltip for leaderboard tab labels (mobile only) */
+.info-btn {
+  display: none; /* hidden on desktop */
+}
+
+@media (max-width: 480px) {
+  .info-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    color: var(--ink-2);
+    cursor: pointer;
+    padding: 0;
+    vertical-align: middle;
+    border-radius: 50%;
+  }
+  .info-btn:hover { color: var(--ink); }
+}
+
+/* Shared tooltip/popover for info tips — rendered into body by JS */
+.info-tip-popover {
+  position: absolute;
+  z-index: 90;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  padding: 10px 12px;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+  max-width: 220px;
+}
+.info-tip-popover[hidden] { display: none; }
+
+/* C. Sheet-full collapse button (mobile only) */
+#sheet-collapse-btn {
+  display: none; /* hidden until sheet-full */
+}
+
+@media (max-width: 480px) {
+  #sheet-collapse-btn {
+    display: none; /* default hidden */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    width: 100%;
+    padding: 8px 16px;
+    background: var(--paper);
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--ink-2);
+    cursor: pointer;
+    text-align: center;
+    letter-spacing: 0.02em;
+  }
+  #sheet-collapse-btn:hover { color: var(--ink); }
+  #panel.sheet-full #sheet-collapse-btn {
+    display: block;
   }
 }
