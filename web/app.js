@@ -90,6 +90,13 @@ function _copyLinkBtnHtml() {
   return `<button class="copy-link-btn" onclick="window.copyCurrentUrl(this)" title="Copy a shareable link to this view">Copy link</button>`;
 }
 
+window.openAuditDisclosure = function () {
+  const d = document.querySelector("#panel .audit-details");
+  if (!d) return;
+  d.open = true;
+  d.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
 window.copyCurrentUrl = function (btn) {
   const url = location.href;
   const flash = (text, klass) => {
@@ -879,7 +886,9 @@ function renderOperator(op) {
     ? `<span class="conf-badge conf-${escapeHtml(op.confidence)}">${escapeHtml(op.confidence)}-confidence cluster</span>`
     : "";
   const serviceAddrBadge = (op.audit && op.audit.service_address && op.audit.service_address.classification === "registered_agent")
-    ? `<span class="service-addr-badge" title="This mailing address registers ${(op.audit.service_address.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities — likely a registered-agent or filing-service pool. See &quot;How these names are grouped&quot; below.">⚠ service address</span>`
+    ? `<button type="button" class="service-addr-badge"
+         title="This mailing address registers ${(op.audit.service_address.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities — likely a registered-agent or filing-service pool. Click to see how these names are grouped."
+         onclick="window.openAuditDisclosure()">⚠ service address</button>`
     : "";
   const evidenceLine = op.evidence
     ? `<p class="evidence">${escapeHtml(op.evidence)}</p>`

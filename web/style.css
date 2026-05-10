@@ -798,7 +798,8 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 }
 
 /* Inline pill rendered next to the operator label when its mailing
-   address resolves to a registered-agent / service-of-process pool. */
+   address resolves to a registered-agent / service-of-process pool.
+   Element is a <button> so it can open the audit disclosure on click. */
 .service-addr-badge {
   display: inline-block;
   font-family: var(--mono);
@@ -806,13 +807,24 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   font-weight: 400;
   letter-spacing: 0;
   color: var(--signal);
+  background: transparent;
   border: 1px solid var(--signal);
   border-radius: 2px;
   padding: 2px 6px;
   margin-left: 8px;
   vertical-align: 2px;
   white-space: nowrap;
-  cursor: help;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.service-addr-badge:hover {
+  background: var(--signal);
+  color: var(--paper);
+}
+.service-addr-badge:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
 }
 
 /* ----- Bottom-sheet handle (phone only; hidden until phone breakpoint) ---- */
