@@ -56,10 +56,20 @@ deploy_site() {
     echo "web/config.js missing. Copy web/config.js.example -> web/config.js and set DATA_BASE." >&2
     exit 1
   fi
-  # Stage site files without web/data/ to stay under the 20k file Pages limit.
+  # Stage site files without web/data/, node_modules/, or test scaffolding
+  # so we stay under Pages' 20k file limit and don't ship dev-only assets.
   STAGE="$(mktemp -d)"
   trap 'rm -rf "$STAGE"' EXIT
-  rsync -a --exclude 'data' web/ "$STAGE/"
+  rsync -a \
+    --exclude 'data' \
+    --exclude 'node_modules' \
+    --exclude 'tests' \
+    --exclude 'coverage' \
+    --exclude 'package.json' \
+    --exclude 'package-lock.json' \
+    --exclude 'vitest.config.js' \
+    --exclude 'vitest.config.js.timestamp-*.mjs' \
+    web/ "$STAGE/"
   npx wrangler pages deploy "$STAGE" --project-name "$PAGES_PROJECT" --commit-dirty=true
 }
 
