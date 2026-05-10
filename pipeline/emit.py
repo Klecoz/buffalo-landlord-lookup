@@ -201,6 +201,33 @@ def _build_operator_clusters(
         if verdict["action"] == "drop":
             counts["dropped"] += 1
             continue
+
+        # NYS DOS service-address lookup — done now (before the count is
+        # tallied) so a clean DOS check can rescue a cluster that cohesion
+        # alone wanted to mark low-confidence.
+        if agent_address_index is None:
+            sa_count = 0
+            sa_classification = "unknown"
+        else:
+            sa_count = agent_address_index.get(mail_key, 0)
+            sa_classification = classify_service_address(sa_count, addr_kind)
+
+        # Promote low → medium when DOS positively rules out a service pool.
+        # Cohesion alone says "low" because the LLC names don't share a stem,
+        # but if DOS shows zero unrelated entities at this address, the
+        # absence-of-pool signal makes a real shared owner the most likely
+        # explanation. Without DOS data (sa_classification == "unknown") we
+        # have no new evidence and the original verdict stands.
+        if verdict["confidence"] == "low" and sa_classification == "shared_owner":
+            verdict = {
+                **verdict,
+                "confidence": "medium",
+                "evidence": (
+                    verdict["evidence"]
+                    + " — corroborated by clean NYS DOS check (no registered-agent pool at this address)"
+                ),
+            }
+
         counts[verdict["confidence"]] += 1
 
         # Build cluster.
@@ -259,20 +286,8 @@ def _build_operator_clusters(
             for g in owner_groups
             if g.get("variants")
         ]
-        # NYS DOS service-address lookup. The cluster's normalized mailing
-        # address is checked against the index of every NY entity's
-        # service-of-process address; a high count means the address is a
-        # registered-agent or filing-service pool, not a real shared owner.
-        # Counts of 0 on a street address are positive evidence the
-        # opposite way (no DOS pool → consistent with shared ownership).
-        # When no index was supplied at all (e.g. --no-dos), classification
-        # is forced to 'unknown' since we have no evidence either way.
-        if agent_address_index is None:
-            sa_count = 0
-            sa_classification = "unknown"
-        else:
-            sa_count = agent_address_index.get(mail_key, 0)
-            sa_classification = classify_service_address(sa_count, addr_kind)
+        # service_address block reuses the sa_count / sa_classification
+        # already computed above for the verdict-promotion step.
         service_address = {
             "classification": sa_classification,
             "nys_dos_entity_count": sa_count,

@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from cluster_score import (
     REGISTERED_AGENT_THRESHOLD,
+    SHARED_OWNER_THRESHOLD,
     classify_service_address,
 )
 from nys_dos import build_index_from_records, _normalize_dos_record
@@ -134,6 +135,12 @@ def test_classify_zero_on_street_is_shared_owner():
     assert classify_service_address(0, "street") == "shared_owner"
 
 
+def test_classify_below_shared_owner_threshold_is_shared_owner():
+    """A street address with <SHARED_OWNER_THRESHOLD entities is too few to
+    plausibly be a filing-service pool. Treat as shared-owner positive."""
+    assert classify_service_address(SHARED_OWNER_THRESHOLD - 1, "street") == "shared_owner"
+
+
 def test_classify_zero_on_po_box_is_unknown():
     """PO boxes don't get classified — DOS process addresses are streets,
     so a PO box won't match anyway and silence > false confidence."""
@@ -141,9 +148,10 @@ def test_classify_zero_on_po_box_is_unknown():
     assert classify_service_address(5, "po_box") == "unknown"
 
 
-def test_classify_low_nonzero_is_unknown():
-    """1–99 entities is ambiguous: too many to be a single owner's mailbox,
-    too few to be a major registered-agent pool. Stay silent."""
-    assert classify_service_address(1, "street") == "unknown"
+def test_classify_middle_range_is_unknown():
+    """Counts between SHARED_OWNER_THRESHOLD and REGISTERED_AGENT_THRESHOLD
+    are ambiguous — too many for a single owner's office, too few for a
+    major registered-agent service. Stay silent."""
+    assert classify_service_address(SHARED_OWNER_THRESHOLD, "street") == "unknown"
     assert classify_service_address(50, "street") == "unknown"
-    assert classify_service_address(99, "street") == "unknown"
+    assert classify_service_address(REGISTERED_AGENT_THRESHOLD - 1, "street") == "unknown"

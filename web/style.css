@@ -665,7 +665,7 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 }
 .conf-badge.conf-high   { color: var(--ink); font-weight: 500; }
 .conf-badge.conf-medium { color: var(--ink-2); }
-.conf-badge.conf-low    { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--ink-2); }
+.conf-badge.conf-low    { color: var(--ink-2); }
 
 .conf-dot {
   display: inline-block;

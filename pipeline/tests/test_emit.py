@@ -506,6 +506,72 @@ def test_cluster_audit_service_address_silent_for_po_box():
     assert sa["classification"] == "unknown"
 
 
+def test_low_confidence_promoted_to_medium_when_dos_clean():
+    """A street cluster with weak cohesion (no shared name stem) would land
+    at "low" on the cohesion-only path. But if the NYS DOS index shows the
+    address has zero unrelated entities, that's positive evidence of a real
+    shared owner — promote the verdict to "medium" and append a note to
+    the evidence string."""
+    addr = "1675 NIAGARA ST | BUFFALO | NY | 14207"
+    diverse_names = [
+        "smith holdings llc", "jones holdings llc", "doe holdings llc",
+        "kim holdings llc", "patel holdings llc", "ng holdings llc",
+        "park holdings llc", "brown holdings llc", "davis holdings llc",
+        "lee holdings llc",
+    ]
+    by_owner = {
+        norm: _owner_agg(
+            norm.replace(" ", "-"), norm.upper(), {addr: 2}, 2
+        )
+        for norm in diverse_names
+    }
+    # Without any DOS index, this cluster should be low-confidence.
+    clusters_no_dos, _, counts_no_dos = _build_operator_clusters(by_owner)
+    assert counts_no_dos.get("low", 0) == 1
+    cluster_no_dos = next(iter(clusters_no_dos.values()))
+    assert cluster_no_dos["confidence"] == "low"
+
+    # With a DOS index that does NOT contain this address (count = 0 on a
+    # street → "shared_owner"), the verdict promotes to medium.
+    clusters, _, counts = _build_operator_clusters(
+        by_owner, agent_address_index={"some other address": 999_999},
+    )
+    assert counts.get("medium", 0) == 1
+    assert counts.get("low", 0) == 0
+    cluster = next(iter(clusters.values()))
+    assert cluster["confidence"] == "medium"
+    assert "NYS DOS" in cluster["evidence"]
+    # Audit block still records the underlying signals truthfully.
+    assert cluster["audit"]["service_address"]["classification"] == "shared_owner"
+    assert cluster["audit"]["cohesion"]["score"] < 0.2
+
+
+def test_promotion_does_not_apply_when_dos_count_low_but_nonzero():
+    """A non-zero DOS count below the registered-agent threshold still
+    classifies as 'unknown' (not 'shared_owner'), so it must NOT promote
+    a low-confidence cluster — we don't have positive evidence either way."""
+    addr = "100 OAK ST | BUFFALO | NY | 14215"
+    diverse_names = [
+        "smith holdings llc", "jones holdings llc", "doe holdings llc",
+        "kim holdings llc", "patel holdings llc", "ng holdings llc",
+        "park holdings llc", "brown holdings llc", "davis holdings llc",
+        "lee holdings llc",
+    ]
+    by_owner = {
+        norm: _owner_agg(
+            norm.replace(" ", "-"), norm.upper(), {addr: 2}, 2
+        )
+        for norm in diverse_names
+    }
+    # 50 entities — below threshold (100), so classification is "unknown".
+    clusters, _, _ = _build_operator_clusters(
+        by_owner, agent_address_index={addr: 50},
+    )
+    cluster = next(iter(clusters.values()))
+    assert cluster["audit"]["service_address"]["classification"] == "unknown"
+    assert cluster["confidence"] == "low"
+
+
 def test_cluster_audit_common_co_owner_suppressed_from_links():
     """A co-owner appearing in MORE than MAX_OPERATORS_PER_CO_OWNER (=5)
     distinct clusters is dropped from linked_operators (still in co_owners)."""

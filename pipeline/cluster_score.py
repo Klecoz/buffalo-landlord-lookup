@@ -168,6 +168,13 @@ def address_kind_from_key(mail_key: str) -> str:
 # observed distribution emitted by pipeline/nys_dos.histogram.
 REGISTERED_AGENT_THRESHOLD = 100
 
+# A street address with FEWER than this many entities is unlikely to be a
+# registered-agent service (real ones have hundreds-to-thousands). Below
+# the bar, we read the address as positive evidence of a real shared
+# owner — even if the cluster has more LLCs than the DOS index records,
+# because dormant or out-of-state LLCs may not show up in DOS at all.
+SHARED_OWNER_THRESHOLD = 30
+
 
 def classify_service_address(
     nys_dos_entity_count: int,
@@ -176,20 +183,19 @@ def classify_service_address(
     """Label the cluster's mailing address against the NYS DOS index.
 
     Returns one of:
-      "registered_agent" — address registers >= threshold NY entities;
-                           probably CSC, Cogency, or a law firm / CPA pool.
-      "shared_owner"     — street address registers zero entities;
+      "registered_agent" — address registers >= REGISTERED_AGENT_THRESHOLD
+                           NY entities; probably CSC, Cogency, or a law
+                           firm / CPA pool.
+      "shared_owner"     — street address with < SHARED_OWNER_THRESHOLD
+                           entities; too few to be a true filing service,
                            consistent with a real shared owner.
-      "unknown"          — anything else (PO boxes, low-but-nonzero counts,
-                           addresses that didn't normalize to a DOS match).
-
-    Deliberately conservative: only the two extremes get a confident label.
-    PO boxes are excluded because the DOS field is a service-of-process
-    *street* address, so the absence of a match is uninformative.
+      "unknown"          — middle range, or PO boxes (DOS process-address
+                           is a *street* field, so PO boxes never match
+                           and the absence is uninformative).
     """
     if nys_dos_entity_count >= REGISTERED_AGENT_THRESHOLD:
         return "registered_agent"
-    if address_kind == "street" and nys_dos_entity_count == 0:
+    if address_kind == "street" and nys_dos_entity_count < SHARED_OWNER_THRESHOLD:
         return "shared_owner"
     return "unknown"
 
