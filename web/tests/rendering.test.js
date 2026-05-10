@@ -267,13 +267,13 @@ describe('renderDossier', () => {
     expect(items[0].textContent).toContain('No heat')
   })
 
-  it('caps displayed violations at 10', () => {
+  it('renders all violations (the user filters via chips)', () => {
     const manyViols = Array.from({ length: 15 }, (_, i) => ({
       date: '2024-01-01', status: 'Open', description: `Issue ${i + 1}`,
     }))
     t.renderDossier(baseProps, { violations: manyViols, complaints: [] })
     const items = document.querySelectorAll('#panel-content .violations li')
-    expect(items.length).toBe(10)
+    expect(items.length).toBe(15)
   })
 
   it('shows portfolio CTA for multi-property owners', () => {

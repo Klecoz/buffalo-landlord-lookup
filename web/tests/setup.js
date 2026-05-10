@@ -77,6 +77,7 @@ beforeAll(async () => {
   window.maplibregl = {
     Map: vi.fn(() => buildMockMap()),
     NavigationControl: vi.fn(),
+    GeolocateControl: vi.fn(),
   }
   global.fetch = makeFetchMock()
   window.matchMedia = vi.fn(() => ({ matches: false }))

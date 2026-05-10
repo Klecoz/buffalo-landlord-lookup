@@ -101,6 +101,59 @@ function _downloadCsvBtnHtml(scope) {
   return `<button class="csv-btn" onclick="window.downloadPortfolioCsv('${escapeHtml(scope)}', this)" title="Download portfolio as CSV">Download CSV</button>`;
 }
 
+// On mobile (≤480px) collapse secondary actions into a ⋯ overflow menu.
+// On desktop render them inline (existing behaviour).
+function _panelHeadActionsHtml(scope) {
+  const copyBtn = _copyLinkBtnHtml();
+  const csvBtn = scope ? _downloadCsvBtnHtml(scope) : "";
+  const inlineActions = `${copyBtn}${csvBtn}`;
+  if (!window.matchMedia("(max-width: 480px)").matches) {
+    return `<div class="panel-head-actions">${inlineActions}</div>`;
+  }
+  // Mobile: single ⋯ button + popover
+  const id = `dossier-overflow-${Math.random().toString(36).slice(2, 7)}`;
+  return `
+    <div class="panel-head-actions dossier-actions--overflow">
+      <button type="button" class="dossier-actions__menu-btn" aria-label="More actions" aria-expanded="false" aria-haspopup="true" data-overflow-id="${id}">⋯</button>
+      <div class="dossier-actions__popover" id="${id}" role="menu" hidden>
+        ${copyBtn}
+        ${csvBtn}
+      </div>
+    </div>`;
+}
+
+// Wire overflow menus inside the panel (called after showPanel renders HTML).
+function _wireDossierOverflow() {
+  $$("#panel .dossier-actions__menu-btn").forEach(btn => {
+    const popover = document.getElementById(btn.dataset.overflowId);
+    if (!popover) return;
+
+    const open = () => {
+      popover.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+    };
+    const close = () => {
+      popover.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+    };
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      popover.hidden ? open() : close();
+    });
+
+    // Close on outside click
+    document.addEventListener("click", (e) => {
+      if (!popover.hidden && !popover.contains(e.target) && e.target !== btn) close();
+    });
+
+    // Close on ESC
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !popover.hidden) close();
+    });
+  });
+}
+
 function _violationTypesHtml(types) {
   if (!Array.isArray(types) || types.length === 0) return "";
   const max = types[0].count || 1;
@@ -239,6 +292,8 @@ function showPanel(html) {
       window.toggleMapHighlight(btn.dataset.kind, btn.dataset.slug, btn.dataset.label);
     });
   });
+  // Re-wire mobile overflow menus.
+  _wireDossierOverflow();
 }
 function hidePanel() {
   // "Close" returns to leaderboards rather than hiding the panel entirely;
@@ -253,7 +308,9 @@ function hidePanel() {
 }
 function fullyHidePanel() {
   $("#panel").classList.add("hidden");
-  $("#reopen-panel").classList.remove("hidden");
+  const reopenBtn = $("#reopen-panel");
+  reopenBtn.innerHTML = "▴ Open";
+  reopenBtn.classList.remove("hidden");
 }
 
 async function loadDossiers() {
@@ -295,7 +352,8 @@ function initMap() {
     center: [BUFFALO.lng, BUFFALO.lat],
     zoom: BUFFALO.zoom,
   });
-  map.addControl(new maplibregl.NavigationControl(), "top-right");
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false, showZoom: true }), "top-right");
+  map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showAccuracyCircle: true }), "top-right");
   state.map = map;
 
   map.on("load", async () => {
@@ -696,10 +754,7 @@ function renderPortfolio(portfolio) {
   showPanel(`
     <div class="panel-head">
       <h2>Owner Portfolio</h2>
-      <div class="panel-head-actions">
-        ${_copyLinkBtnHtml()}
-        ${_downloadCsvBtnHtml("portfolio")}
-      </div>
+      ${_panelHeadActionsHtml("portfolio")}
     </div>
     <div class="addr">${escapeHtml(portfolio.owner_display)}</div>
     ${operatorHint}
@@ -922,16 +977,23 @@ function renderLeaderboards() {
       </li>`;
   }).join("");
 
+  const phone = window.matchMedia("(max-width: 480px)").matches;
+  const operatorsLabel = phone
+    ? `Operators <button type="button" class="info-btn" aria-label="What does Operators mean?" aria-expanded="false" data-info-tip="Grouped by shared mailing address — typically a real signal, but lawyers and property managers can cause false merges.">ⓘ</button>`
+    : "Operators (mailing-address clusters)";
+  const ownersLabel = phone
+    ? `Owner names <button type="button" class="info-btn" aria-label="What does Owner names mean?" aria-expanded="false" data-info-tip="Raw LLC names — every distinct LLC is treated as a separate owner.">ⓘ</button>`
+    : "Owner names (raw)";
   const kindToggle = `
     <div class="kind-toggle">
-      <button class="${isOperators ? "active" : ""}" data-kind="operators">Operators (mailing-address clusters)</button>
-      <button class="${!isOperators ? "active" : ""}" data-kind="owners">Owner names (raw)</button>
+      <button class="${isOperators ? "active" : ""}" data-kind="operators">${operatorsLabel}</button>
+      <button class="${!isOperators ? "active" : ""}" data-kind="owners">${ownersLabel}</button>
     </div>`;
 
   showPanel(`
     <div class="panel-head">
       <h2>Top Landlords</h2>
-      ${_copyLinkBtnHtml()}
+      ${_panelHeadActionsHtml(null)}
     </div>
     <p class="empty" style="margin:0 0 8px;">Public records, ranked. Excludes city, county, state, and federal owners.</p>
 
@@ -951,8 +1013,49 @@ function renderLeaderboards() {
     </div>
   `);
 
+  // Wire ⓘ info tooltips (mobile only — desktop renders inline label text instead)
+  $$("#panel .info-btn").forEach(infoBtn => {
+    const tip = infoBtn.dataset.infoTip;
+    if (!tip) return;
+    // Create a shared singleton popover anchored near the button
+    const showTip = () => {
+      let tip_el = document.getElementById("leaderboard-info-tip");
+      if (!tip_el) {
+        tip_el = document.createElement("div");
+        tip_el.id = "leaderboard-info-tip";
+        tip_el.className = "dossier-actions__popover info-tip-popover";
+        tip_el.setAttribute("role", "tooltip");
+        document.body.appendChild(tip_el);
+      }
+      tip_el.textContent = infoBtn.dataset.infoTip;
+      tip_el.hidden = false;
+      infoBtn.setAttribute("aria-expanded", "true");
+      // Position below the button
+      const rect = infoBtn.getBoundingClientRect();
+      tip_el.style.top = `${rect.bottom + window.scrollY + 4}px`;
+      tip_el.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
+    };
+    const hideTip = () => {
+      const tip_el = document.getElementById("leaderboard-info-tip");
+      if (tip_el) tip_el.hidden = true;
+      infoBtn.setAttribute("aria-expanded", "false");
+    };
+    infoBtn.addEventListener("click", (e) => {
+      e.stopPropagation(); // don't fire kind-toggle parent
+      const tip_el = document.getElementById("leaderboard-info-tip");
+      const isOpen = tip_el && !tip_el.hidden && infoBtn.getAttribute("aria-expanded") === "true";
+      isOpen ? hideTip() : showTip();
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".info-btn")) hideTip();
+    }, { once: false });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") hideTip();
+    });
+  });
+
   // Wire kind toggle, tabs, rows
-  $$("#panel .kind-toggle button").forEach(btn => {
+  $$("#panel .kind-toggle button[data-kind]").forEach(btn => {
     btn.addEventListener("click", () => {
       state.activeBoardKind = btn.dataset.kind;
       _syncLeaderboardHash();
@@ -1134,10 +1237,7 @@ function renderOperator(op) {
   showPanel(`
     <div class="panel-head">
       <h2>Operator</h2>
-      <div class="panel-head-actions">
-        ${_copyLinkBtnHtml()}
-        ${_downloadCsvBtnHtml("operator")}
-      </div>
+      ${_panelHeadActionsHtml("operator")}
     </div>
     <div class="addr-row">
       <div class="addr">${escapeHtml(op.operator_label)}</div>
@@ -1376,17 +1476,39 @@ function setupBottomSheet() {
   if (!handle) return;
   const isPhone = () => window.matchMedia("(max-width: 480px)").matches;
 
+  // Inject collapse button (visible only when sheet-full is active)
+  let collapseBtn = document.getElementById("sheet-collapse-btn");
+  if (!collapseBtn) {
+    collapseBtn = document.createElement("button");
+    collapseBtn.id = "sheet-collapse-btn";
+    collapseBtn.type = "button";
+    collapseBtn.setAttribute("aria-label", "Collapse sheet");
+    collapseBtn.textContent = "▾ Collapse";
+    panel.insertBefore(collapseBtn, panel.querySelector("#panel-content"));
+  }
+
   const SNAPS = ["sheet-peek", "sheet-half", "sheet-full"];
   const setSnap = (name) => {
     SNAPS.forEach(c => panel.classList.remove(c));
     panel.classList.add(name);
     panel.classList.remove("hidden");
     panel.style.height = "";
+    // Update reopen-panel label at peek state
+    const reopenBtn = $("#reopen-panel");
+    if (name === "sheet-peek") {
+      reopenBtn.innerHTML = "▴ Open";
+      reopenBtn.classList.remove("hidden");
+    }
     // If user opened a closed panel via the handle, restore last view.
     if (!$("#panel-content").innerHTML.trim()) {
       renderLeaderboards();
     }
   };
+
+  // Wire collapse button: sheet-full → sheet-half
+  collapseBtn.addEventListener("click", () => {
+    setSnap("sheet-half");
+  });
   const currentSnap = () =>
     SNAPS.find(c => panel.classList.contains(c)) || "sheet-half";
 
