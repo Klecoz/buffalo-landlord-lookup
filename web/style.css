@@ -1140,7 +1140,7 @@ body.panel-collapsed #panel-collapse {
     align-items: center;
     gap: 6px;
     position: fixed;
-    bottom: 148px; /* above colophon strip */
+    bottom: 168px; /* clear of the ~22px-tall colophon strip at bottom:132px */
     left: 12px;
     padding: 5px 8px;
     font-size: 10px;
