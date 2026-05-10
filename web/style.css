@@ -12,6 +12,7 @@
   --rule:    #e5e3dd;
   --rule-2:  #c9c7bf;
   --signal:  #b9292d;
+  --footer-h: 32px;
 
   /* Concern ramp — grays + signal */
   --s0: #dcd9d2;   /* clean — almost vanishes */
@@ -135,7 +136,7 @@ button { font-family: inherit; }
 /* ----- Map --------------------------------------------------------------- */
 #map {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 32px;
+  top: 0; left: 0; right: 0; bottom: var(--footer-h);
   background: var(--paper-2);
 }
 
@@ -264,6 +265,12 @@ button { font-family: inherit; }
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
 }
+.stat-grid--compact {
+  gap: 22px 28px;
+}
+#panel .stat-grid--compact .num {
+  font-size: 24px;
+}
 .stat {
   flex: 0 0 auto;
   min-width: 64px;
@@ -353,6 +360,13 @@ table.portfolio tbody tr {
   transition: background 80ms;
 }
 table.portfolio tbody tr:hover td { background: var(--paper-2); }
+table.portfolio tbody tr td:first-child {
+  border-left: 2px solid transparent;
+  transition: border-color 80ms;
+}
+table.portfolio tbody tr:hover td:first-child {
+  border-left-color: var(--ink);
+}
 table.portfolio td.num {
   text-align: right;
   font-family: var(--mono);
@@ -378,7 +392,8 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 .colophon {
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  height: 32px;
+  min-height: 32px;
+  height: auto;
   padding: 0 16px;
   background: var(--paper);
   border-top: 1px solid var(--rule);
@@ -395,54 +410,65 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 .colophon .sep { color: var(--rule-2); }
 #meta-info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+@media (max-width: 1100px) and (min-width: 481px) {
+  :root { --footer-h: 52px; }
+  .colophon {
+    white-space: normal;
+    flex-wrap: wrap;
+    min-height: 32px;
+    height: auto;
+    padding: 6px 16px;
+  }
+}
+
 /* ----- Legend ------------------------------------------------------------ */
 .legend {
   position: absolute;
   bottom: 44px; left: 20px;
-  background: rgba(250, 250, 247, 0.88);
+  background: rgba(250, 250, 247, 0.9);
   border: 1px solid var(--rule);
-  padding: 10px 14px 10px 10px;
-  font-family: var(--sans);
-  font-size: 12px;
-  z-index: 20;
-  color: var(--ink);
-}
-.legend::before {
-  content: "";
-  display: block;
-  width: 32px;
-  height: 1px;
-  background: var(--rule-2);
-  margin: 0 0 8px;
-}
-.legend .legend-row {
-  display: grid;
-  grid-template-columns: 14px 32px 1fr;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 0;
-}
-.legend .legend-range {
+  padding: 10px 14px;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--ink);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.legend-label-left {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-2);
+  margin: 0 0 2px;
+}
+.legend-ramp {
+  display: flex;
+  flex-direction: row;
+}
+.legend-step {
+  display: block;
+  width: 24px;
+  height: 10px;
+}
+.legend-step.s0 { background: var(--s0); border-bottom: 1px solid var(--rule-2); }
+.legend-step.s1 { background: var(--s1); }
+.legend-step.s2 { background: var(--s2); }
+.legend-step.s3 { background: var(--s3); }
+.legend-step.s4 { background: var(--s4); }
+.legend-ticks {
+  display: flex;
+  flex-direction: row;
+  font-size: 10px;
+  color: var(--ink-2);
+}
+.legend-ticks span {
+  flex: 1;
+  text-align: left;
+}
+.legend-ticks span:last-child {
+  flex: 0 0 auto;
   text-align: right;
 }
-.legend .legend-label {
-  color: var(--ink-2);
-  font-size: 12px;
-}
-.legend .dot {
-  display: inline-block;
-  width: 10px; height: 10px;
-  border-radius: 0;
-  border: 0;
-}
-.dot.s0 { background: var(--s0); border: 1px solid var(--rule-2); }
-.dot.s1 { background: var(--s1); }
-.dot.s2 { background: var(--s2); }
-.dot.s3 { background: var(--s3); }
-.dot.s4 { background: var(--s4); }
 
 /* ----- Tabs / kind toggle ----------------------------------------------- */
 .kind-toggle,
@@ -495,10 +521,15 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   align-items: baseline;
   padding: 10px 4px;
   border-bottom: 1px solid var(--rule);
+  border-left: 2px solid transparent;
+  margin-left: -2px;
   cursor: pointer;
-  transition: background 80ms;
+  transition: background 80ms, border-color 80ms;
 }
-.leaderboard li:hover { background: var(--paper-2); }
+.leaderboard li:hover {
+  background: var(--paper-2);
+  border-left-color: var(--ink);
+}
 .leaderboard .rank {
   font-family: var(--mono);
   font-size: 12px;
@@ -544,6 +575,11 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 .leaderboard.llc-list li {
   grid-template-columns: 1fr auto;
   padding: 9px 4px;
+  border-left: 2px solid transparent;
+  margin-left: -2px;
+}
+.leaderboard.llc-list li:hover {
+  border-left-color: var(--ink);
 }
 .leaderboard.llc-list .stat-num { font-size: 12.5px; }
 
@@ -870,6 +906,18 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   100% { transform: translateY(0); }
 }
 #panel.nudge-once { animation: sheet-nudge 1100ms ease-out 1; }
+
+/* ----- Retina hairlines (2× displays) ----------------------------------- */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
+  .stat-grid { border-top-width: 0.5px; border-bottom-width: 0.5px; }
+  .leaderboard li { border-bottom-width: 0.5px; }
+  .leaderboard { border-top-width: 0.5px; }
+  table.portfolio thead th { border-bottom-width: 0.5px; }
+  table.portfolio td { border-bottom-width: 0.5px; }
+  #panel h3 { border-top-width: 0.5px; }
+  #panel { border-left-width: 0.5px; }
+  .colophon { border-top-width: 0.5px; }
+}
 
 /* ----- Tablet (481-880px) ------------------------------------------------ */
 @media (max-width: 880px) and (min-width: 481px) {
