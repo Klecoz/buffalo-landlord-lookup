@@ -1,8 +1,13 @@
 pipeline/raw/
+pipeline/derived/
 web/data/
+web/config.js
+.cloudflare-deploy.env
 __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
 venv/
 .DS_Store
+.claude/
+.wrangler/

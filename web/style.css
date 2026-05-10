@@ -690,6 +690,15 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 }
 .evidence strong { font-weight: 500; color: var(--ink); }
 
+/* ----- Section metadata row (sits under an h3 with freshness pills) ----- */
+.section-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: -4px 0 10px;
+}
+.section-meta .freshness-pill { margin-left: 0; }
+
 /* ----- Freshness pill --------------------------------------------------- */
 .freshness-pill {
   display: inline-block;
@@ -780,15 +789,269 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   color: var(--ink-2);
 }
 
-/* ----- Responsive ------------------------------------------------------- */
-@media (max-width: 880px) {
+/* Audit list item flagged as a registered-agent service address (NYS DOS). */
+.audit-list > li.audit-warn {
+  color: var(--ink);
+}
+.audit-list > li.audit-warn .audit-key {
+  color: var(--signal);
+}
+
+/* Inline pill rendered next to the operator label when its mailing
+   address resolves to a registered-agent / service-of-process pool. */
+.service-addr-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--signal);
+  border: 1px solid var(--signal);
+  border-radius: 2px;
+  padding: 2px 6px;
+  margin-left: 8px;
+  vertical-align: 2px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* ----- Bottom-sheet handle (phone only; hidden until phone breakpoint) ---- */
+.panel-handle {
+  display: none;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 28px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  z-index: 2;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+  border-radius: 14px 14px 0 0;
+  transition: background 120ms;
+}
+.panel-handle:hover,
+.panel-handle:focus-visible { background: var(--paper-2); outline: none; }
+.panel-handle:active { cursor: grabbing; background: var(--paper-2); }
+.panel-handle > span {
+  display: block;
+  width: 56px;
+  height: 5px;
+  margin: 11px auto 0;
+  background: var(--ink-2);
+  border-radius: 3px;
+  opacity: 0.55;
+  transition: opacity 120ms, transform 120ms;
+}
+.panel-handle:hover > span,
+.panel-handle:active > span { opacity: 0.85; transform: scaleX(1.05); }
+.audit-summary-mobile { display: none; }
+
+/* One-time hint bounce — JS adds .nudge-once to the panel when the sheet
+   first appears on a phone, removes it after the animation runs. */
+@keyframes sheet-nudge {
+  0%   { transform: translateY(0); }
+  18%  { transform: translateY(-22px); }
+  36%  { transform: translateY(0); }
+  54%  { transform: translateY(-10px); }
+  72%  { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+#panel.nudge-once { animation: sheet-nudge 1100ms ease-out 1; }
+
+/* ----- Tablet (481-880px) ------------------------------------------------ */
+@media (max-width: 880px) and (min-width: 481px) {
   .masthead { padding: 16px 18px 12px; }
-  #search-row { top: 70px; left: 18px; right: 18px; width: auto; }
+  #search-row { top: 70px; left: 18px; right: 18px; width: auto; max-width: none; }
   #filter-chip { top: auto; bottom: 50px; left: 18px; right: 18px; max-width: none; }
-  #panel { width: 100%; max-width: 100%; padding: 28px 22px 32px; }
-  .legend { display: none; }
+  #panel { width: 360px; padding: 28px 22px 32px; }
   #reopen-panel { top: auto; bottom: 44px; right: 14px; }
   .colophon { font-size: 10.5px; }
+}
+
+/* ----- Phone (≤480px) — bottom sheet over map --------------------------- */
+@media (max-width: 480px) {
+  /* Chrome */
+  .masthead { padding: 12px 14px 8px; }
+  .masthead-title { font-size: 18px; }
+  .masthead-meta { display: none; }
+
+  #search-row {
+    top: 44px; left: 12px; right: 12px;
+    width: auto; max-width: none;
+  }
+  #search {
+    padding: 12px 0;
+    font-size: 16px;        /* avoid iOS zoom */
+    min-height: 44px;
+  }
+  #search-results { max-height: 40vh; }
+  #search-results li { padding: 12px 14px; min-height: 44px; }
+
+  /* Hide MapLibre nav controls on phones — pinch-to-zoom is native; the
+     controls otherwise overlap the search bar's right edge. */
+  .maplibregl-ctrl-top-right { display: none; }
+
+  /* Map fills below the search row; sheet floats above */
+  #map { bottom: 0; }
+  .colophon { display: none; }
+  .legend { display: none; }
+  #reopen-panel { display: none; }
+  #filter-chip {
+    top: auto;
+    left: 12px; right: 12px;
+    bottom: calc(120px + 12px);   /* sit above the sheet at peek */
+    max-width: none;
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 44px;
+    text-align: center;
+  }
+
+  /* Bottom sheet ------------------------------------------------------- */
+  #panel {
+    top: auto; right: 0; left: 0; bottom: 0;
+    width: 100%; max-width: 100%;
+    height: 55vh;
+    padding: 38px 18px 26px;
+    border-left: 0;
+    border-top: 1px solid var(--rule-2);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.06);
+    transition: height 200ms ease-out, transform 200ms ease-out;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  #panel.hidden {
+    transform: none;
+    height: 60px;            /* peek strip when closed */
+    padding-top: 28px;
+    padding-bottom: 8px;
+    overflow: hidden;
+  }
+  #panel.hidden #panel-content { display: none; }
+  #panel.sheet-peek {
+    height: 120px;
+  }
+  #panel.sheet-half {
+    height: 55vh;
+  }
+  #panel.sheet-full {
+    height: 92vh;
+  }
+  /* While the user is dragging the handle, freeze the inner scroll so the
+     gesture only resizes the sheet — not the content underneath. */
+  #panel.dragging {
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  .panel-handle { display: block; }
+  #panel-close {
+    top: 34px; right: 8px;     /* below the handle strip */
+    font-size: 24px;
+    padding: 6px 10px;
+    min-width: 44px; min-height: 44px;
+  }
+
+  /* Tighten panel typography for the small screen */
+  #panel { padding-top: 30px; }
+  #panel .addr { font-size: 22px; }
+  #panel h3 { margin-top: 18px; padding-top: 10px; }
+  .stat-grid { gap: 16px 22px; }
+  .stat .num { font-size: 22px; }
+
+  /* Wider tap targets on common interactive elements */
+  button.cta { padding: 12px 14px; min-height: 44px; }
+  .copy-link-btn { padding: 6px 0; }
+  .leaderboard li { padding: 12px 6px; min-height: 44px; }
+  .kind-toggle button,
+  .tabs button { padding: 12px 6px; min-height: 44px; }
+
+  /* Tabs scroll horizontally on phones (5 boards × 2 kinds doesn't fit) */
+  .tabs,
+  .kind-toggle {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tabs::-webkit-scrollbar,
+  .kind-toggle::-webkit-scrollbar { display: none; }
+  .tabs button,
+  .kind-toggle button {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    min-width: max-content;
+    padding-left: 14px; padding-right: 14px;
+  }
+
+  /* Portfolio table → stacked cards
+     Each <tr> becomes a card; each <td> becomes a labeled flex row using the
+     data-label attribute set in JS. */
+  table.portfolio,
+  table.portfolio thead,
+  table.portfolio tbody,
+  table.portfolio tr,
+  table.portfolio td {
+    display: block;
+    width: 100%;
+  }
+  table.portfolio thead { display: none; }
+  table.portfolio tr {
+    border: 1px solid var(--rule);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  table.portfolio td {
+    border: 0;
+    padding: 4px 0;
+    text-align: left !important;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+  }
+  table.portfolio td.num { padding: 4px 0; font-size: 13px; }
+  table.portfolio td:first-child {
+    font-weight: 500;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    display: block;          /* address line is full width */
+  }
+  table.portfolio td[data-label]::before {
+    content: attr(data-label);
+    font-family: var(--sans);
+    font-size: 11px;
+    color: var(--ink-2);
+    letter-spacing: 0;
+    text-transform: none;
+    margin-right: 12px;
+  }
+
+  /* Operator audit: swap "How these names are grouped" for a one-line summary */
+  .audit-summary-desktop { display: none; }
+  .audit-summary-mobile  { display: inline; }
+  .audit-list .audit-key { display: block; min-width: 0; margin-bottom: 2px; }
+  .audit-list > li { padding: 6px 0; }
+}
+
+/* Use dynamic-viewport units when available so iOS Safari address-bar
+   collapse doesn't break the sheet height. */
+@supports (height: 100dvh) {
+  @media (max-width: 480px) {
+    #panel.sheet-half { height: 55dvh; }
+    #panel.sheet-full { height: 92dvh; }
+  }
+}
+
+/* Suppress 300ms tap delay on common interactive elements */
+button, a, .leaderboard li, table.portfolio tbody tr, #search-results li,
+.tabs button, .kind-toggle button, .panel-handle, #filter-chip {
+  touch-action: manipulation;
 }
 
 /* ----- Reduced motion --------------------------------------------------- */

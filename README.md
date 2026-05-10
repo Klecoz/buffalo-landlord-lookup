@@ -40,3 +40,7 @@ The pipeline writes a `meta.json` with row counts and refresh date. The footer o
 ```bash
 cd pipeline && pytest
 ```
+
+## Deploy
+
+Hosted on Cloudflare Pages (site) + Cloudflare R2 (data). See [DEPLOY.md](DEPLOY.md) for one-time setup and the manual refresh workflow.

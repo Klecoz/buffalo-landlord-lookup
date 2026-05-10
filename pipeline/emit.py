@@ -21,8 +21,10 @@ from pathlib import Path
 from typing import Any
 
 from cluster_score import (
+    REGISTERED_AGENT_THRESHOLD,
     address_kind_from_key,
     classify_cluster,
+    classify_service_address,
     cohesion_details,
     dedup_persons_in_cluster,
 )
@@ -137,6 +139,8 @@ def _slugify_unique(label: str, used: set[str]) -> str:
 
 def _build_operator_clusters(
     by_owner: dict[str, dict],
+    agent_address_index: dict[str, int] | None = None,
+    dos_max_date: str | None = None,
 ) -> tuple[dict[str, dict], dict[str, str], dict[str, int]]:
     """Cluster owners by their primary mailing address.
 
@@ -255,6 +259,28 @@ def _build_operator_clusters(
             for g in owner_groups
             if g.get("variants")
         ]
+        # NYS DOS service-address lookup. The cluster's normalized mailing
+        # address is checked against the index of every NY entity's
+        # service-of-process address; a high count means the address is a
+        # registered-agent or filing-service pool, not a real shared owner.
+        # Counts of 0 on a street address are positive evidence the
+        # opposite way (no DOS pool → consistent with shared ownership).
+        # When no index was supplied at all (e.g. --no-dos), classification
+        # is forced to 'unknown' since we have no evidence either way.
+        if agent_address_index is None:
+            sa_count = 0
+            sa_classification = "unknown"
+        else:
+            sa_count = agent_address_index.get(mail_key, 0)
+            sa_classification = classify_service_address(sa_count, addr_kind)
+        service_address = {
+            "classification": sa_classification,
+            "nys_dos_entity_count": sa_count,
+            "threshold": REGISTERED_AGENT_THRESHOLD,
+            "source": "nys_dos_active_corporations",
+            "source_max_date": dos_max_date,
+        }
+
         audit = {
             "shared_mailing_address": mail_key,
             "address_kind": addr_kind,
@@ -265,6 +291,7 @@ def _build_operator_clusters(
                 "explanation": cohesion["explanation"],
             },
             "pattern": verdict.get("pattern"),
+            "service_address": service_address,
             "person_dedups": person_dedups,
             "co_owners": [],          # filled in post-pass below
             "linked_operators": [],   # filled in post-pass below
@@ -344,7 +371,11 @@ def _build_operator_clusters(
     return clusters, owner_to_operator, counts
 
 
-def emit(joined: dict) -> dict[str, Path]:
+def emit(
+    joined: dict,
+    agent_address_index: dict[str, int] | None = None,
+    dos_max_date: str | None = None,
+) -> dict[str, Path]:
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     OWNERS_DIR.mkdir(parents=True, exist_ok=True)
     OPERATORS_DIR.mkdir(parents=True, exist_ok=True)
@@ -456,13 +487,38 @@ def emit(joined: dict) -> dict[str, Path]:
 
     # Build operator clusters BEFORE writing owner files so each owner gets its operator_slug.
     print("Clustering operators by mailing address...", file=sys.stderr)
-    clusters, owner_to_operator, cluster_counts = _build_operator_clusters(by_owner)
+    clusters, owner_to_operator, cluster_counts = _build_operator_clusters(
+        by_owner,
+        agent_address_index=agent_address_index,
+        dos_max_date=dos_max_date,
+    )
     print(
         f"  {len(clusters):,} operator clusters formed "
         f"(high={cluster_counts['high']}, medium={cluster_counts['medium']}, "
         f"low={cluster_counts['low']}, dropped={cluster_counts['dropped']})",
         file=sys.stderr,
     )
+
+    # Sanity-print the distribution of NYS DOS entity counts at cluster
+    # mailing addresses, so we can eyeball whether REGISTERED_AGENT_THRESHOLD
+    # is well-calibrated against the data we just computed.
+    if agent_address_index is not None and clusters:
+        from nys_dos import histogram
+        bands = histogram(clusters.values())
+        ra = sum(
+            1 for c in clusters.values()
+            if (c.get("audit") or {}).get("service_address", {}).get("classification") == "registered_agent"
+        )
+        print(
+            f"  service-address classification: {ra} clusters flagged as registered_agent "
+            f"(threshold={REGISTERED_AGENT_THRESHOLD})",
+            file=sys.stderr,
+        )
+        print(
+            "  cluster-mailing-address NYS DOS entity-count distribution: "
+            + ", ".join(f"{label}:{count}" for label, count in bands),
+            file=sys.stderr,
+        )
 
     # ------------------------------------------------------------------
     # properties.geojson — emitted now so each feature carries operator_slug
@@ -635,6 +691,8 @@ def emit(joined: dict) -> dict[str, Path]:
     print("Emitting meta.json...", file=sys.stderr)
     meta = dict(meta)  # don't mutate caller's dict
     meta["clusters"] = cluster_counts
+    if dos_max_date:
+        meta["nys_dos_max_date"] = dos_max_date
     _atomic_write(WEB_DATA / "meta.json", meta)
 
     return {

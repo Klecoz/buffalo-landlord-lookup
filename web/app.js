@@ -6,6 +6,10 @@
 
 const BUFFALO = { lng: -78.8784, lat: 42.8864, zoom: 12 };
 
+// Where the JSON artifacts live. Local dev: "data". Prod: set window.DATA_BASE
+// to your R2 public URL (e.g. "https://pub-xxx.r2.dev") in index.html before app.js loads.
+const DATA_BASE = (typeof window !== "undefined" && window.DATA_BASE) || "data";
+
 const state = {
   map: null,
   addressIndex: [],   // [{addr, id}, ...]
@@ -108,8 +112,29 @@ window.copyCurrentUrl = function (btn) {
 
 function showPanel(html) {
   $("#panel-content").innerHTML = html;
-  $("#panel").classList.remove("hidden");
+  const panel = $("#panel");
+  panel.classList.remove("hidden");
+  panel.scrollTop = 0;
   $("#reopen-panel").classList.add("hidden");
+  // On phones, ensure the sheet has a snap state. Default to half when
+  // navigating into a route; otherwise leave the user's chosen state alone.
+  if (window.matchMedia("(max-width: 480px)").matches) {
+    if (!panel.classList.contains("sheet-peek") &&
+        !panel.classList.contains("sheet-half") &&
+        !panel.classList.contains("sheet-full")) {
+      panel.classList.add("sheet-half");
+    }
+    // First-time hint: bounce the sheet once so the drag affordance is obvious.
+    try {
+      if (!sessionStorage.getItem("sheetNudged")) {
+        sessionStorage.setItem("sheetNudged", "1");
+        panel.classList.add("nudge-once");
+        panel.addEventListener("animationend", () => {
+          panel.classList.remove("nudge-once");
+        }, { once: true });
+      }
+    } catch {}
+  }
   // Re-wire any "Highlight on map" buttons that were just rendered.
   $$("#panel .highlight-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -136,7 +161,7 @@ function fullyHidePanel() {
 async function loadDossiers() {
   if (state.dossiers) return state.dossiers;
   try {
-    const r = await fetch("data/dossiers.json");
+    const r = await fetch(`${DATA_BASE}/dossiers.json`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     state.dossiers = await r.json();
   } catch (e) {
@@ -177,7 +202,7 @@ function initMap() {
 
   map.on("load", async () => {
     try {
-      map.addSource("parcels", { type: "geojson", data: "data/properties.geojson" });
+      map.addSource("parcels", { type: "geojson", data: `${DATA_BASE}/properties.geojson` });
 
       // Build a circle layer at the centroid of each parcel polygon for fast render.
       // Color encodes concern_score; demolished parcels override.
@@ -380,7 +405,8 @@ function renderDossier(props, dossier) {
 
     ${portfolioCta}
 
-    <h3>Recent code violations (${violations.length}) ${freshnessPill("violations")}</h3>
+    <h3>Recent code violations (${violations.length})</h3>
+    <div class="section-meta">${freshnessPill("violations")}</div>
     ${violations.length === 0
       ? `<p class="empty">No code violations on record.</p>`
       : `<ul class="violations">${violations.slice(0, 10).map(v => `
@@ -390,7 +416,8 @@ function renderDossier(props, dossier) {
           </li>`).join("")}</ul>`
     }
 
-    <h3>Recent 311 housing complaints (${complaints.length}) ${freshnessPill("311")}</h3>
+    <h3>Recent 311 housing complaints (${complaints.length})</h3>
+    <div class="section-meta">${freshnessPill("311")}</div>
     ${complaints.length === 0
       ? `<p class="empty">No housing-related 311 complaints in the last 18 months.</p>`
       : `<ul class="complaints">${complaints.slice(0, 10).map(c => `
@@ -409,7 +436,7 @@ function renderDossier(props, dossier) {
 
 window.openPortfolio = async function (slug, opts = {}) {
   try {
-    const r = await fetch(`data/owners/${slug}.json`);
+    const r = await fetch(`${DATA_BASE}/owners/${slug}.json`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const portfolio = await r.json();
     portfolio._slug = slug;  // attach slug for the highlight toggle
@@ -454,10 +481,10 @@ function renderPortfolio(portfolio) {
 
   const rows = portfolio.properties.map(p => `
     <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
-      <td>${escapeHtml(p.addr)}</td>
-      <td class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
-      <td class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
-      <td class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : ""}</td>
+      <td data-label="Address">${escapeHtml(p.addr)}</td>
+      <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
+      <td data-label="311" class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
+      <td data-label="Demo" class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : "—"}</td>
     </tr>
   `).join("");
 
@@ -495,7 +522,8 @@ function renderPortfolio(portfolio) {
     ${operatorCta}
     ${highlightBtn}
 
-    <h3>Properties (sorted by concern score) ${freshnessPill("violations")} ${freshnessPill("311")}</h3>
+    <h3>Properties (sorted by concern score)</h3>
+    <div class="section-meta">${freshnessPill("violations")} ${freshnessPill("311")}</div>
     <table class="portfolio">
       <thead><tr><th>Address</th><th class="num">Open</th><th class="num">311</th><th class="num">Demo</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -740,7 +768,10 @@ function renderAuditDisclosure(op) {
   const a = op.audit;
   if (!a) {
     return op.evidence
-      ? `<details class="audit-details"><summary>How these names are grouped</summary>
+      ? `<details class="audit-details"><summary>
+           <span class="audit-summary-desktop">How these names are grouped</span>
+           <span class="audit-summary-mobile">Grouping evidence</span>
+         </summary>
            <p>${escapeHtml(op.evidence)}</p>
          </details>`
       : "";
@@ -752,6 +783,15 @@ function renderAuditDisclosure(op) {
     : "";
   const patternLine = a.pattern === "alter_ego"
     ? `<li><span class="audit-key">Pattern</span> alter-ego — one person + one LLC at the same street address. Classic LLC-unmasking signal.</li>`
+    : "";
+  // Service-address classification (NYS DOS join). Rendered only when the
+  // pipeline has classified the address; "unknown" is silent because we
+  // don't want to imply false confidence either way.
+  const sa = a.service_address || {};
+  const serviceAddrLine = sa.classification === "registered_agent"
+    ? `<li class="audit-warn"><span class="audit-key">Service address</span> ${(sa.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities are registered at this address — likely a registered-agent or filing-service address, not a real shared owner. <span class="sub">(NYS DOS, threshold ${sa.threshold})</span></li>`
+    : sa.classification === "shared_owner"
+    ? `<li><span class="audit-key">Service address</span> No registered-agent pool detected at this address. <span class="sub">(NYS DOS)</span></li>`
     : "";
   const dedupLines = (a.person_dedups || []).map(d => `
     <li><span class="audit-key">Name dedup</span>
@@ -774,13 +814,23 @@ function renderAuditDisclosure(op) {
       <span class="sub">via ${escapeHtml(L.co_owner)} (${L.parcels} parcel${L.parcels === 1 ? "" : "s"} there)</span>
     </li>`).join("");
 
+  const mobileSummary = [
+    `${a.member_count || (op.owners || []).length} LLC${(a.member_count || 0) === 1 ? "" : "s"}`,
+    a.shared_mailing_address ? "shared mailing addr" : null,
+    cohesion.score != null ? `cohesion ${cohesion.score}` : null,
+  ].filter(Boolean).join(" · ");
+
   return `
     <details class="audit-details">
-      <summary>How these names are grouped</summary>
+      <summary>
+        <span class="audit-summary-desktop">How these names are grouped</span>
+        <span class="audit-summary-mobile">${escapeHtml(mobileSummary)}</span>
+      </summary>
       <ul class="audit-list">
         <li><span class="audit-key">Shared mailing address</span> ${escapeHtml(a.shared_mailing_address || "—")}
           <span class="sub">(${escapeHtml(a.address_kind || "")})</span></li>
         ${cohesionLine}
+        ${serviceAddrLine}
         ${patternLine}
         ${dedupLines}
         ${memberLines}
@@ -794,7 +844,7 @@ function renderAuditDisclosure(op) {
 // ---------- operator view ----------
 window.openOperator = async function (slug, opts = {}) {
   try {
-    const r = await fetch(`data/operators/${slug}.json`);
+    const r = await fetch(`${DATA_BASE}/operators/${slug}.json`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const op = await r.json();
     state.lastOperator = op;
@@ -828,6 +878,9 @@ function renderOperator(op) {
   const confBadge = op.confidence
     ? `<span class="conf-badge conf-${escapeHtml(op.confidence)}">${escapeHtml(op.confidence)}-confidence cluster</span>`
     : "";
+  const serviceAddrBadge = (op.audit && op.audit.service_address && op.audit.service_address.classification === "registered_agent")
+    ? `<span class="service-addr-badge" title="This mailing address registers ${(op.audit.service_address.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities — likely a registered-agent or filing-service pool. See &quot;How these names are grouped&quot; below.">⚠ service address</span>`
+    : "";
   const evidenceLine = op.evidence
     ? `<p class="evidence">${escapeHtml(op.evidence)}</p>`
     : "";
@@ -855,10 +908,10 @@ function renderOperator(op) {
 
   const propsRows = op.properties.slice(0, 200).map(p => `
     <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
-      <td>${escapeHtml(p.addr)}</td>
-      <td class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
-      <td class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
-      <td class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : ""}</td>
+      <td data-label="Address">${escapeHtml(p.addr)}</td>
+      <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
+      <td data-label="311" class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
+      <td data-label="Demo" class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : "—"}</td>
     </tr>
   `).join("");
 
@@ -868,7 +921,7 @@ function renderOperator(op) {
       ${_copyLinkBtnHtml()}
     </div>
     <div class="addr">${escapeHtml(op.operator_label)}</div>
-    ${confBadge}
+    ${confBadge}${serviceAddrBadge}
     ${evidenceLine}
     <p class="empty" style="margin:2px 0 12px;">Mailing address: <strong>${escapeHtml(op.mailing_address)}</strong></p>
     ${renderAuditDisclosure(op)}
@@ -888,7 +941,8 @@ function renderOperator(op) {
     <h3>Constituent LLCs (${op.owners.length})</h3>
     <ul class="leaderboard llc-list">${ownersList}</ul>
 
-    <h3>Properties (top 200 by concern) ${freshnessPill("violations")} ${freshnessPill("311")}</h3>
+    <h3>Properties (top 200 by concern)</h3>
+    <div class="section-meta">${freshnessPill("violations")} ${freshnessPill("311")}</div>
     <table class="portfolio">
       <thead><tr><th>Address</th><th class="num">Open</th><th class="num">311</th><th class="num">Demo</th></tr></thead>
       <tbody>${propsRows}</tbody>
@@ -950,7 +1004,7 @@ function setupSearch() {
 // ---------- meta + bootstrap ----------
 async function loadMeta() {
   try {
-    const r = await fetch("data/meta.json");
+    const r = await fetch(`${DATA_BASE}/meta.json`);
     state.meta = await r.json();
     const date = (state.meta.generated_at || "").slice(0, 10);
     const c311 = (state.meta.complaints_311_max_date || "").slice(0, 10);
@@ -966,7 +1020,7 @@ async function loadMeta() {
 
 async function loadAddressIndex() {
   try {
-    const r = await fetch("data/address_index.json");
+    const r = await fetch(`${DATA_BASE}/address_index.json`);
     state.addressIndex = await r.json();
   } catch (e) {
     console.error("address index load failed", e);
@@ -976,7 +1030,7 @@ async function loadAddressIndex() {
 
 async function loadTopOwners() {
   try {
-    const r = await fetch("data/top_owners.json");
+    const r = await fetch(`${DATA_BASE}/top_owners.json`);
     state.topOwners = await r.json();
   } catch (e) {
     console.error("top owners load failed", e);
@@ -986,7 +1040,7 @@ async function loadTopOwners() {
 
 async function loadTopOperators() {
   try {
-    const r = await fetch("data/top_operators.json");
+    const r = await fetch(`${DATA_BASE}/top_operators.json`);
     state.topOperators = await r.json();
   } catch (e) {
     console.error("top operators load failed", e);
@@ -1024,6 +1078,92 @@ function setupHashRouting() {
   window.addEventListener("hashchange", applyHashRoute);
 }
 
+// ---------- bottom sheet (phones only) ----------
+function setupBottomSheet() {
+  const panel = $("#panel");
+  const handle = panel.querySelector(".panel-handle");
+  if (!handle) return;
+  const isPhone = () => window.matchMedia("(max-width: 480px)").matches;
+
+  const SNAPS = ["sheet-peek", "sheet-half", "sheet-full"];
+  const setSnap = (name) => {
+    SNAPS.forEach(c => panel.classList.remove(c));
+    panel.classList.add(name);
+    panel.classList.remove("hidden");
+    panel.style.height = "";
+    // If user opened a closed panel via the handle, restore last view.
+    if (!$("#panel-content").innerHTML.trim()) {
+      renderLeaderboards();
+    }
+  };
+  const currentSnap = () =>
+    SNAPS.find(c => panel.classList.contains(c)) || "sheet-half";
+
+  let dragging = false;
+  let startY = 0;
+  let startH = 0;
+  let lastY = 0;
+
+  handle.addEventListener("pointerdown", (e) => {
+    if (!isPhone()) return;
+    dragging = true;
+    startY = lastY = e.clientY;
+    startH = panel.getBoundingClientRect().height;
+    panel.style.transition = "none";
+    panel.classList.add("dragging");
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    lastY = e.clientY;
+    const dy = e.clientY - startY;
+    const newH = Math.max(80, Math.min(window.innerHeight, startH - dy));
+    panel.style.height = `${newH}px`;
+    e.preventDefault();
+  });
+  const endDrag = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    panel.style.transition = "";
+    panel.classList.remove("dragging");
+    const moved = Math.abs(lastY - startY);
+    const heights = {
+      "sheet-peek": 120,
+      "sheet-half": Math.round(window.innerHeight * 0.55),
+      "sheet-full": Math.round(window.innerHeight * 0.92),
+    };
+    let snap;
+    if (moved < 6) {
+      // tap — cycle peek → half → full → peek
+      const cur = currentSnap();
+      snap = { "sheet-peek": "sheet-half", "sheet-half": "sheet-full", "sheet-full": "sheet-peek" }[cur];
+    } else {
+      const h = panel.getBoundingClientRect().height;
+      let bestKey = "sheet-half", bestDist = Infinity;
+      for (const [key, target] of Object.entries(heights)) {
+        const d = Math.abs(h - target);
+        if (d < bestDist) { bestDist = d; bestKey = key; }
+      }
+      snap = bestKey;
+    }
+    setSnap(snap);
+    try { handle.releasePointerCapture(e.pointerId); } catch {}
+  };
+  handle.addEventListener("pointerup", endDrag);
+  handle.addEventListener("pointercancel", endDrag);
+
+  // Keyboard accessibility — Enter/Space cycles snap states.
+  handle.addEventListener("keydown", (e) => {
+    if (!isPhone()) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      const cur = currentSnap();
+      setSnap({ "sheet-peek": "sheet-half", "sheet-half": "sheet-full", "sheet-full": "sheet-peek" }[cur]);
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   $("#filter-chip").addEventListener("click", clearMapFilter);
   $("#panel-close").addEventListener("click", () => {
@@ -1040,6 +1180,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initMap();
   setupSearch();
   setupHashRouting();
+  setupBottomSheet();
   await Promise.all([loadMeta(), loadAddressIndex(), loadTopOwners(), loadTopOperators()]);
 
   // Replay initial hash route after data load, otherwise show leaderboards.

@@ -429,6 +429,83 @@ def test_cluster_audit_linked_operators_via_shared_co_owner():
         f"B should link to A; got {b_links}"
 
 
+def test_cluster_audit_service_address_unknown_without_index():
+    """When no NYS DOS index is supplied, every cluster's service_address
+    block records count=0 and classification='unknown' — the absence of an
+    index must not surface false 'shared_owner' confidence."""
+    addr = "100 MAIN ST | BUFFALO | NY | 14215"
+    by_owner = {}
+    for i in range(4):
+        by_owner[f"acme {i} llc"] = _owner_agg(
+            f"acme-{i}-llc", f"ACME {i} LLC", {addr: 3}, 5
+        )
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    cluster = next(iter(clusters.values()))
+    sa = cluster["audit"]["service_address"]
+    assert sa["nys_dos_entity_count"] == 0
+    assert sa["classification"] == "unknown"
+
+
+def test_cluster_audit_service_address_flags_registered_agent():
+    """When the cluster's mailing address appears in the NYS DOS index with
+    a count above REGISTERED_AGENT_THRESHOLD, the audit block surfaces the
+    'registered_agent' classification with the count and threshold."""
+    addr = "100 MAIN ST | BUFFALO | NY | 14215"
+    by_owner = {}
+    for i in range(4):
+        by_owner[f"acme {i} llc"] = _owner_agg(
+            f"acme-{i}-llc", f"ACME {i} LLC", {addr: 3}, 5
+        )
+    index = {addr: 1247}
+    clusters, _, _ = _build_operator_clusters(
+        by_owner, agent_address_index=index, dos_max_date="2026-04-30",
+    )
+    cluster = next(iter(clusters.values()))
+    sa = cluster["audit"]["service_address"]
+    assert sa["classification"] == "registered_agent"
+    assert sa["nys_dos_entity_count"] == 1247
+    assert sa["threshold"] >= 1
+    assert sa["source"] == "nys_dos_active_corporations"
+    assert sa["source_max_date"] == "2026-04-30"
+
+
+def test_cluster_audit_service_address_flags_shared_owner_when_zero_on_street():
+    """A street mailing address absent from the NYS DOS index is positive
+    evidence of a real shared owner."""
+    addr = "100 MAIN ST | BUFFALO | NY | 14215"
+    by_owner = {}
+    for i in range(4):
+        by_owner[f"acme {i} llc"] = _owner_agg(
+            f"acme-{i}-llc", f"ACME {i} LLC", {addr: 3}, 5
+        )
+    index = {"some other address": 5000}  # mailing addr not in index
+    clusters, _, _ = _build_operator_clusters(
+        by_owner, agent_address_index=index,
+    )
+    cluster = next(iter(clusters.values()))
+    sa = cluster["audit"]["service_address"]
+    assert sa["nys_dos_entity_count"] == 0
+    assert sa["classification"] == "shared_owner"
+
+
+def test_cluster_audit_service_address_silent_for_po_box():
+    """PO box addresses don't get classified — the DOS process_address
+    field is a service-of-process street, so a PO box never matches and
+    silence is preferable to misleading confidence."""
+    addr = "PO BOX 99 | BUFFALO | NY | 14210"
+    by_owner = {
+        "acme one llc": _owner_agg("acme-one-llc", "ACME ONE LLC", {addr: 4}, 4),
+        "acme two llc": _owner_agg("acme-two-llc", "ACME TWO LLC", {addr: 3}, 3),
+    }
+    clusters, _, _ = _build_operator_clusters(
+        by_owner, agent_address_index={},
+    )
+    cluster = next(iter(clusters.values()))
+    sa = cluster["audit"]["service_address"]
+    assert sa["nys_dos_entity_count"] == 0
+    assert sa["classification"] == "unknown"
+
+
 def test_cluster_audit_common_co_owner_suppressed_from_links():
     """A co-owner appearing in MORE than MAX_OPERATORS_PER_CO_OWNER (=5)
     distinct clusters is dropped from linked_operators (still in co_owners)."""

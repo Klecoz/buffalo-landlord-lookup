@@ -159,6 +159,41 @@ def address_kind_from_key(mail_key: str) -> str:
     return "po_box" if mail_key.startswith("PO BOX ") else "street"
 
 
+# --- Service-address classification (NYS DOS join) -----------------------
+
+# A street address that registers at least this many distinct NY business
+# entities (per the NYS DOS dos_process_address field) is treated as a
+# registered-agent / filing-service address — counter-evidence to the
+# 'real shared owner' hypothesis. 100 is a starting point; tune from the
+# observed distribution emitted by pipeline/nys_dos.histogram.
+REGISTERED_AGENT_THRESHOLD = 100
+
+
+def classify_service_address(
+    nys_dos_entity_count: int,
+    address_kind: str,
+) -> str:
+    """Label the cluster's mailing address against the NYS DOS index.
+
+    Returns one of:
+      "registered_agent" — address registers >= threshold NY entities;
+                           probably CSC, Cogency, or a law firm / CPA pool.
+      "shared_owner"     — street address registers zero entities;
+                           consistent with a real shared owner.
+      "unknown"          — anything else (PO boxes, low-but-nonzero counts,
+                           addresses that didn't normalize to a DOS match).
+
+    Deliberately conservative: only the two extremes get a confident label.
+    PO boxes are excluded because the DOS field is a service-of-process
+    *street* address, so the absence of a match is uninformative.
+    """
+    if nys_dos_entity_count >= REGISTERED_AGENT_THRESHOLD:
+        return "registered_agent"
+    if address_kind == "street" and nys_dos_entity_count == 0:
+        return "shared_owner"
+    return "unknown"
+
+
 # --- Person-name dedup ---------------------------------------------------
 
 def _is_llc_like(name: str) -> bool:
