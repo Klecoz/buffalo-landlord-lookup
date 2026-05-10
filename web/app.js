@@ -1174,7 +1174,7 @@ function setupBottomSheet() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
+async function bootstrap() {
   $("#filter-chip").addEventListener("click", clearMapFilter);
   $("#panel-close").addEventListener("click", () => {
     // If we're on the leaderboard view already, fully hide; otherwise return to leaderboards.
@@ -1199,4 +1199,49 @@ document.addEventListener("DOMContentLoaded", async () => {
   } else {
     renderLeaderboards();
   }
-});
+}
+
+// Module scripts are deferred — they execute after DOMContentLoaded fires,
+// so a plain `addEventListener("DOMContentLoaded", ...)` never runs in
+// production. Branch on readyState so we work in both states (and so the
+// jsdom test setup, which imports the module after the DOM is parsed,
+// also runs the bootstrap).
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootstrap);
+} else {
+  bootstrap();
+}
+
+// Test surface — these names back the tests in tests/*.test.js, which
+// import this module via setupFiles. Keeping them in a single export at
+// the bottom makes the test contract explicit.
+export {
+  // pure helpers
+  escapeHtml,
+  fmtDate,
+  fmtMoney,
+  freshnessPill,
+  // shared mutable state (tests reset between cases)
+  state,
+  // panel helpers
+  showPanel,
+  hidePanel,
+  fullyHidePanel,
+  // view renderers
+  renderDossier,
+  renderPortfolio,
+  renderLeaderboards,
+  renderOperator,
+  renderAuditDisclosure,
+  // routing
+  applyHashRoute,
+  // map filter
+  applyMapFilter,
+  clearMapFilter,
+  updateFilterChip,
+  // search wiring (tests call this directly because the bootstrap's
+  // DOMContentLoaded already fired by the time test files import)
+  setupSearch,
+  // constants
+  BOARDS,
+};

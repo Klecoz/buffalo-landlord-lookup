@@ -4,18 +4,12 @@
  * Runs before every test file (vitest setupFiles). Responsibilities:
  *   1. Inject the minimal HTML skeleton that app.js reads via document.querySelector
  *   2. Mock browser globals that don't exist in jsdom (maplibregl, fetch, matchMedia)
- *   3. Load app.js via new Function(), passing explicit browser globals as params so
- *      const-declared internal functions are in scope for the trailing expose block
- *   4. Expose internal functions as window._test for tests to consume
+ *   3. Dynamic-import app.js as an ES module so v8 coverage can instrument it
+ *   4. Bind the module's exports to window._test for tests to consume
  *   5. Reset mutable state + DOM between tests via beforeEach
  */
 
 import { vi, beforeAll, beforeEach } from 'vitest'
-import { readFileSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -73,101 +67,13 @@ function makeFetchMock() {
 }
 
 // ---------------------------------------------------------------------------
-// Load app.js ONCE using new Function() so all const-declared internals are
-// in scope within the same function body.  Browser globals are passed as
-// explicit parameters so they're available without relying on jsdom's
-// global scope injection.
-// ---------------------------------------------------------------------------
-
-let appLoaded = false
-
-function loadApp() {
-  if (appLoaded) return
-  appLoaded = true
-
-  const appCode = readFileSync(join(__dirname, '../app.js'), 'utf8')
-
-  // Append the expose block *inside* the same function body so that all
-  // top-level `const` declarations from app.js are in scope here.
-  const expose = `
-;(function __expose() {
-  try {
-    window._test = {
-      // pure helpers
-      escapeHtml,
-      fmtDate,
-      fmtMoney,
-      freshnessPill,
-      // mutable state object (shared reference — reset in beforeEach)
-      state,
-      // panel helpers
-      showPanel,
-      hidePanel,
-      fullyHidePanel,
-      // view renderers
-      renderDossier,
-      renderPortfolio,
-      renderLeaderboards,
-      renderOperator,
-      renderAuditDisclosure,
-      // routing
-      applyHashRoute,
-      // map filter
-      applyMapFilter,
-      clearMapFilter,
-      updateFilterChip,
-      // search (event handlers wired by setupSearch — call from tests
-      // because the bootstrap's DOMContentLoaded already fired by the
-      // time setup.js loads app.js)
-      setupSearch,
-      // constants
-      BOARDS,
-    }
-  } catch (e) {
-    // Capture the error so tests can report a readable failure
-    window._testLoadError = String(e)
-  }
-})()
-`
-
-  // new Function() runs in non-strict mode, so top-level `const` declarations
-  // inside the function body are accessible throughout, including in `expose`.
-  // We pass all browser globals that app.js references as explicit parameters
-  // rather than relying on the global scope.
-  const fn = new Function(
-    'window',
-    'document',
-    'location',
-    'history',
-    'sessionStorage',
-    'navigator',
-    'console',
-    'Date',
-    'Math',
-    'fetch',
-    appCode + expose,
-  )
-
-  fn(
-    window,
-    window.document,
-    window.location,
-    window.history,
-    window.sessionStorage ?? {},
-    window.navigator ?? {},
-    console,
-    Date,
-    Math,
-    global.fetch,
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Lifecycle hooks
 // ---------------------------------------------------------------------------
 
-beforeAll(() => {
-  // Set up mocks before app.js executes so initMap() sees them
+beforeAll(async () => {
+  // Stage browser-global mocks BEFORE importing app.js so its module-level
+  // code (initMap → new maplibregl.Map(...), bootstrap → fetch(...)) sees
+  // them on first execution.
   window.maplibregl = {
     Map: vi.fn(() => buildMockMap()),
     NavigationControl: vi.fn(),
@@ -176,11 +82,15 @@ beforeAll(() => {
   window.matchMedia = vi.fn(() => ({ matches: false }))
 
   injectDOM()
-  loadApp()
 
-  if (window._testLoadError) {
-    throw new Error(`app.js failed to load: ${window._testLoadError}`)
-  }
+  // Dynamic-import the module under test. Bootstrap runs immediately
+  // (readyState === 'complete' at this point in jsdom), but its async
+  // fetches won't have resolved before the awaited import returns.
+  const app = await import('../app.js')
+
+  // Bind exports to window._test so the existing test files (which expect
+  // window._test) keep working without per-file imports.
+  window._test = app
 })
 
 beforeEach(() => {
