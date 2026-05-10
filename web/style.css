@@ -687,6 +687,12 @@ body.panel-collapsed #panel-collapse {
 #reopen-panel:hover { background: var(--ink); color: var(--paper); }
 #reopen-panel.hidden { display: none; }
 
+/* Desktop & tablet: side-panel collapse replaces the reopen button.
+   Phones (≤480) re-show via the existing phone media query below. */
+@media (min-width: 481px) {
+  #reopen-panel { display: none; }
+}
+
 /* ----- Filter chip ------------------------------------------------------- */
 #filter-chip {
   position: absolute;

@@ -1457,15 +1457,25 @@ function setupBottomSheet() {
 
 async function bootstrap() {
   $("#filter-chip").addEventListener("click", clearMapFilter);
-  $("#panel-close").addEventListener("click", () => {
+  $("#panel-close").addEventListener("click", (e) => {
     state.selectedId = null;
     state.lastPortfolio = null;
     state.lastOperator = null;
     // From a dossier/operator/owner route, go back to leaderboards.
-    // From leaderboards (or empty hash), fully hide so the user can see the map.
+    // From leaderboards: phones fully hide (bottom-sheet peek + reopen button);
+    // desktop/tablet collapse to the rail so there's one mechanism for "give me
+    // back the map" — the side-panel collapse toggle.
     const onLeaderboards = !location.hash || /^#\/top\//.test(location.hash);
+    const isPhone = window.matchMedia("(max-width: 480px)").matches;
     if (onLeaderboards) {
-      fullyHidePanel();
+      if (isPhone) {
+        fullyHidePanel();
+      } else if (!document.body.classList.contains("panel-collapsed")) {
+        // Stop the bubble so the panel's rail-click handler doesn't immediately
+        // re-expand the rail we just collapsed.
+        e.stopPropagation();
+        $("#panel-collapse").click();
+      }
     } else {
       location.hash = "";
     }
