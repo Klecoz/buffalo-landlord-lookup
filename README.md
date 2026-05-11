@@ -38,7 +38,11 @@ The pipeline writes a `meta.json` with row counts and refresh date. The footer o
 ## Run tests
 
 ```bash
+# Pipeline (Python)
 cd pipeline && pytest
+
+# Frontend (Vitest / jsdom)
+cd web && npm install && npm test
 ```
 
 ## Deploy
