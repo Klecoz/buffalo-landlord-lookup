@@ -50,6 +50,19 @@ def _slugify(name: str) -> str:
     return s or "unknown"
 
 
+TOP_VIOLATION_TYPES_N = 5
+
+
+def _top_violation_types(counts: Counter) -> list[dict]:
+    """Top-N (default 5) violation code_section tally as a JSON-friendly list."""
+    if not counts:
+        return []
+    return [
+        {"code_section": section, "count": n}
+        for section, n in counts.most_common(TOP_VIOLATION_TYPES_N)
+    ]
+
+
 def _atomic_write(path: Path, data: Any) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -245,6 +258,7 @@ def _build_operator_clusters(
         owners_block = []
         all_props: list[dict] = []
         totals = {"properties": 0, "open": 0, "all_violations": 0, "complaints_311_12mo": 0, "total_value": 0}
+        cluster_violation_type_counts: Counter[str] = Counter()
         for o in sorted_owners:
             agg = by_owner[o]
             owners_block.append({
@@ -259,6 +273,9 @@ def _build_operator_clusters(
             all_props.extend(agg["props"])
             for k in totals:
                 totals[k] += agg[k]
+            cluster_violation_type_counts.update(
+                agg.get("violation_type_counts") or Counter()
+            )
             owner_to_operator[o] = slug
 
         # Co-owner aggregation across this cluster's member owners.
@@ -333,6 +350,7 @@ def _build_operator_clusters(
             "total_all_violations": totals["all_violations"],
             "total_complaints_311_12mo": totals["complaints_311_12mo"],
             "total_value": totals["total_value"],
+            "top_violation_types": _top_violation_types(cluster_violation_type_counts),
             "properties": sorted(all_props, key=lambda p: -p["concern_score"]),
         }
         clusters[slug]["_co_owner_counts"] = cluster_co_owner_counts
@@ -441,6 +459,10 @@ def emit(
         portfolio_complaints_311 = 0
         portfolio_value = 0
         oldest_violation = None
+        # Per-owner tally of violation code_section across all parcels.
+        # Cluster-level aggregation later sums these Counters across the
+        # cluster's constituent owners.
+        violation_type_counts: Counter[str] = Counter()
         # Co-owner aggregation: every parcel's ADD_OWNER, parsed to a stable
         # key. Same human under different spellings collapses to one entry.
         co_owner_counts: Counter[frozenset] = Counter()
@@ -457,6 +479,10 @@ def emit(
             if parcel["last_violation_date"]:
                 if oldest_violation is None or parcel["last_violation_date"] < oldest_violation:
                     oldest_violation = parcel["last_violation_date"]
+            for v in parcel.get("violations") or ():
+                section = (v.get("code_section") or "").strip()
+                if section:
+                    violation_type_counts[section] += 1
             # Mailing-address tally — only if NOT owner-occupied.
             if not parcel.get("is_self_mail"):
                 mk = normalize_mail_address(
@@ -506,6 +532,8 @@ def emit(
             "props": sorted(props, key=lambda x: -x["concern_score"]),
             "co_owner_counts": co_owner_counts,
             "co_owner_displays": co_owner_displays,
+            "violation_type_counts": violation_type_counts,
+            "top_violation_types": _top_violation_types(violation_type_counts),
         }
 
     # Build operator clusters BEFORE writing owner files so each owner gets its operator_slug.
@@ -595,6 +623,7 @@ def emit(
             "oldest_violation": agg["oldest_violation"],
             "operator_slug": operator_slug,
             "operator_confidence": operator_confidence,
+            "top_violation_types": agg.get("top_violation_types") or [],
             "properties": agg["props"],
         })
         owner_aggregates.append({

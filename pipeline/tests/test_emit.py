@@ -13,8 +13,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from emit import (
+    TOP_VIOLATION_TYPES_N,
     _build_operator_clusters,
     _is_skipped_owner,
+    _top_violation_types,
 )
 
 
@@ -570,6 +572,73 @@ def test_promotion_does_not_apply_when_dos_count_low_but_nonzero():
     cluster = next(iter(clusters.values()))
     assert cluster["audit"]["service_address"]["classification"] == "unknown"
     assert cluster["confidence"] == "low"
+
+
+def test_top_violation_types_orders_and_caps():
+    """_top_violation_types returns at most TOP_VIOLATION_TYPES_N entries
+    sorted by count descending."""
+    counts = Counter({
+        "Section 304 — Exterior Structure": 12,
+        "Section 302 — Exterior Property": 8,
+        "Section 305 — Interior Structure": 5,
+        "Section 308 — Rubbish": 3,
+        "Section 309 — Pests": 2,
+        "Section 310 — Other": 1,
+    })
+    out = _top_violation_types(counts)
+    assert len(out) == TOP_VIOLATION_TYPES_N == 5
+    assert [r["count"] for r in out] == [12, 8, 5, 3, 2]
+    assert out[0]["code_section"] == "Section 304 — Exterior Structure"
+    assert all(set(r.keys()) == {"code_section", "count"} for r in out)
+
+
+def test_top_violation_types_empty_returns_empty_list():
+    assert _top_violation_types(Counter()) == []
+
+
+def test_cluster_top_violation_types_sums_across_owners():
+    """The cluster's top_violation_types Counter sums across constituent
+    owners — same code_section appearing under two LLCs accumulates."""
+    by_owner = {
+        "alpha llc": {
+            **_owner_agg("alpha-llc", "Alpha LLC",
+                         {"PO BOX 7 | BUFFALO | NY | 14210": 5}, 5),
+            "violation_type_counts": Counter({
+                "Section 304 — Exterior Structure": 7,
+                "Section 302 — Exterior Property": 2,
+            }),
+        },
+        "beta llc": {
+            **_owner_agg("beta-llc", "Beta LLC",
+                         {"PO BOX 7 | BUFFALO | NY | 14210": 3}, 3),
+            "violation_type_counts": Counter({
+                "Section 304 — Exterior Structure": 5,
+                "Section 308 — Rubbish": 4,
+            }),
+        },
+    }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    assert len(clusters) == 1
+    cluster = next(iter(clusters.values()))
+    types = cluster["top_violation_types"]
+    # Section 304 sums to 12 across the two owners.
+    assert types[0] == {"code_section": "Section 304 — Exterior Structure", "count": 12}
+    # All three distinct sections present, descending order.
+    assert [r["count"] for r in types] == [12, 4, 2]
+
+
+def test_cluster_top_violation_types_empty_when_no_data():
+    """Owners without violation_type_counts produce an empty list (no raw
+    Counter leaks into the emitted JSON)."""
+    by_owner = {
+        "alpha llc": _owner_agg("alpha-llc", "Alpha LLC",
+                                {"PO BOX 7 | BUFFALO | NY | 14210": 5}, 5),
+        "beta llc":  _owner_agg("beta-llc", "Beta LLC",
+                                {"PO BOX 7 | BUFFALO | NY | 14210": 3}, 3),
+    }
+    clusters, _, _ = _build_operator_clusters(by_owner)
+    cluster = next(iter(clusters.values()))
+    assert cluster["top_violation_types"] == []
 
 
 def test_cluster_audit_common_co_owner_suppressed_from_links():

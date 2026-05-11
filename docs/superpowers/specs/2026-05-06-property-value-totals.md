@@ -1,3 +1,5 @@
+> **Status:** Shipped — see git log around 2026-05 (`feat: total property value per landlord, with new "Value" leaderboard tab`). This file is kept for historical context only and is NOT a live roadmap item.
+
 # Total Property Value per Landlord
 
 ## Context

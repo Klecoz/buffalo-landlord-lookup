@@ -1,6 +1,8 @@
+> **Status:** Shipped — see git log around 2026-05 (`feat(pipeline): co_owner module`, `feat(web): co-owner evidence + linked operators in audit disclosure`). This file is kept for historical context only and is NOT a live roadmap item.
+
 # Co-owner Unmasking (Surface-Only)
 
-**Status:** approved design, ready for implementation planning
+~~**Status:** approved design, ready for implementation planning~~ (shipped)
 **Date:** 2026-05-07
 
 ## Context

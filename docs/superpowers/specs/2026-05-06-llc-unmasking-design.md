@@ -1,3 +1,5 @@
+> **Status:** Shipped — see git log around 2026-05 (`feat: LLC unmasking via mailing-address clustering`). This file is kept for historical context only and is NOT a live roadmap item.
+
 # LLC Unmasking via Mailing-Address Clustering
 
 ## Context

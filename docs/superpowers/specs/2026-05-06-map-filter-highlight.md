@@ -1,3 +1,5 @@
+> **Status:** Shipped — see git log around 2026-05 (`feat: map filter — highlight an owner or operator's parcels`). This file is kept for historical context only and is NOT a live roadmap item.
+
 # Map Filter — Highlight an Owner or Operator's Parcels
 
 ## Context
