@@ -280,3 +280,28 @@ def test_socrata_multi_page_fetch_loses_no_rows(monkeypatch):
     assert Counter(r["uniquekey"] for r in rows) == Counter(
         r["uniquekey"] for r in expected
     )
+
+
+def test_arcgis_short_page_advances_by_rows_returned(monkeypatch):
+    """`resultRecordCount` is a ceiling, not a promise. A server that caps a
+    page below the request (its own maxRecordCount, or a per-page byte budget)
+    while setting exceededTransferLimit must not cause the next offset to skip
+    the rows it never sent."""
+    arc_page = fetch_mod.ARC_PAGE
+    pages = [
+        # Asked for ARC_PAGE, got 3, and there is more to come.
+        {"features": [{"i": i} for i in range(3)], "exceededTransferLimit": True},
+        {"features": [{"i": 3}]},
+    ]
+    offsets = []
+
+    def fake_get(url, params=None, timeout=None):
+        offsets.append(params["resultOffset"])
+        return _FakeResponse(pages.pop(0))
+
+    monkeypatch.setattr(fetch_mod.requests, "get", fake_get)
+    monkeypatch.setattr(fetch_mod.time, "sleep", lambda *_: None)
+    fc = fetch_mod._arcgis_geojson("http://x", "1=1")
+
+    assert offsets == [0, 3], "second page must resume where the first ended"
+    assert [f["i"] for f in fc["features"]] == [0, 1, 2, 3]

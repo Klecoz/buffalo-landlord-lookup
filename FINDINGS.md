@@ -234,3 +234,11 @@ applied at the next full run.
   against the local file. The 311 (4 pages) and demolition (1 page) pulls
   happened to come through intact — it is luck, not a property of those
   datasets. Fixed by sending `$order=:id` on every page.
+- **ArcGIS paging advanced the offset by the page size it asked for, not the
+  page size it got.** `resultRecordCount` is a ceiling: a server is free to
+  return fewer rows and set `exceededTransferLimit`, and every row in the
+  shortfall would have been skipped. Latent, not triggered: the NYS
+  Clearinghouse layer reports `maxRecordCount: 50000`, well above the
+  ARC_PAGE=1000 we request, so it returns full pages. Today's parcel pull is
+  complete — `returnCountOnly` on the live service reports exactly 93,440
+  features for `MUNI_NAME='Buffalo'`, matching `raw/parcels.geojson`.

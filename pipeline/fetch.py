@@ -101,7 +101,10 @@ def _arcgis_geojson(url: str, where: str) -> dict:
             break
         if not page:
             break
-        offset += ARC_PAGE
+        # Advance by what the server actually sent, not by what we asked for:
+        # resultRecordCount is a ceiling the server may undercut, and any
+        # shortfall would otherwise be skipped over.
+        offset += len(page)
         time.sleep(0.2)
     return {"type": "FeatureCollection", "features": features}
 
