@@ -707,3 +707,46 @@ and reaches `bottom: 0` at 120px (peek) or 60px (`.hidden`). The pill's box
 `elementFromPoint` at its centre returned the panel's content, not the button.
 The CSS force-shows it at peek and the JS relabels it "▴ Open" on every snap
 to peek, so both halves were maintaining a control nobody could see.
+
+### Board pills were 36px on phones because an id selector outranked the fix
+
+The phone block sets `.tabs button { min-height: 44px }` (specificity 0-1-1).
+The desktop pill treatment added in the previous pass is written
+`#panel .tabs button` (1-1-1) with `min-height: 36px`, and cascade order does
+not enter into it — the id wins at every viewport. Measured 60×36 at 390px
+while the sibling `.kind-toggle button` next to it measured 83×44.
+
+### The 481–880px band ellipsised every board label to nonsense
+
+The horizontal-scroll treatment for the five board pills is scoped to ≤480px.
+Between 481 and 880 the base `.tabs button { flex: 1 }` splits a 316px row
+five ways, and the labels truncate to "Op…", "Pr…", "Val…". The kind toggle
+above it fails the same way with the long-form labels the same band selects:
+"Operators (mailing-address clusters)" in a 158px tab renders as
+"Operators (mailing-addr…". Both are load-bearing labels, not decoration.
+
+### At tablet the filter chip ran under the side panel and over the legend
+
+`#filter-chip { bottom: 86px; left: 18px; right: 18px }` spans the full width,
+but the panel occupies the right 360px at `z-index: 30` — so the chip's right
+end, "✕ Clear" included, was covered. At the bottom it also overlapped the
+legend, which sits at `bottom: 44px` and stands ~75px tall in this band.
+
+### Tab labels were chosen at render time and stranded by rotation
+
+`renderLeaderboards` picks between a short label with an ⓘ button and the
+spelled-out label by testing `matchMedia("(max-width: 480px)")` when it runs.
+Nothing re-rendered on resize, so a phone rotated to landscape kept the short
+labels — and `.info-btn` is `display: none` above 480px, so the explanation
+those labels depend on became unreachable. Rotating the other way stranded the
+long labels in the narrow sheet.
+
+### Verified sound: snap targets, tap-to-cycle, and drag past both ends
+
+Driving synthetic pointer events on the handle at 360×740: tap cycles
+peek→half→full→peek correctly from all three states; a drag 600px past the top
+clamps at `innerHeight` and snaps to full; a 700px drag down from full lands
+the panel at the 80px floor and snaps to peek. The one gap is velocity — a
+60px flick up from peek snaps back to peek, because `endDrag` only measures
+final position. Left alone; velocity tracking is the gesture-logic change this
+pass was scoped out of.

@@ -1125,8 +1125,21 @@ body.panel-collapsed #panel-collapse {
 @media (max-width: 880px) and (min-width: 481px) {
   .masthead { padding: 16px 18px 12px; }
   #search-row { top: 70px; left: 18px; right: 18px; width: auto; max-width: none; }
-  #filter-chip { top: auto; bottom: 86px; left: 18px; right: 18px; max-width: none; }
+  /* Below the search row rather than along the bottom: at bottom:86px the chip
+     sat on top of the legend, and a full-width chip ran under the side panel. */
+  #filter-chip {
+    top: 122px; bottom: auto;
+    left: 18px; right: auto;
+    max-width: calc(100vw - 360px - 48px);
+  }
   #panel { width: 360px; padding: 28px 22px 32px; }
+  /* flex:1 from the base tab rule split 5 pills evenly and ellipsised every
+     label to "Op…"/"Pr…"/"Val…". Phones scroll this row instead (≤480px). */
+  #panel .tabs:has(button[data-board]) { flex-wrap: wrap; }
+  #panel .tabs button[data-board] { flex: 0 0 auto; }
+  /* "Operators (mailing-address clusters)" cannot fit a 158px tab. Two lines
+     beat truncating it to "Operators (mailing-addr…". */
+  .kind-toggle button { white-space: normal; overflow: visible; }
   #reopen-panel { top: auto; bottom: 44px; right: 14px; }
   .colophon { font-size: 10.5px; }
 }
@@ -1348,10 +1361,16 @@ body.panel-collapsed #panel-collapse {
 
   /* Wider tap targets on common interactive elements */
   button.cta { padding: 12px 14px; min-height: 44px; }
-  .copy-link-btn { padding: 6px 0; }
+  .copy-link-btn { padding: 8px 0; min-height: 44px; }
+  /* Underlined text buttons, so the box grows downward without moving the
+     baseline the rule sits on. */
+  .csv-btn { padding: 8px 0; min-height: 44px; display: inline-flex; align-items: center; }
   .leaderboard li { padding: 12px 6px; min-height: 44px; }
   .kind-toggle button,
   .tabs button { padding: 12px 6px; min-height: 44px; }
+  /* The pill treatment is written as `#panel .tabs button`, which outranks the
+     rule above and pinned the board pills back to their 36px desktop height. */
+  #panel .tabs button { min-height: 44px; }
 
   /* Tabs scroll horizontally on phones (5 boards × 2 kinds doesn't fit) */
   .tabs,

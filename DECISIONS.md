@@ -2,6 +2,45 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — The tablet band gets wrapping, not a wider panel
+
+Between 481 and 880px the five board pills and the two kind-toggle tabs are
+allowed to size to their content and wrap to a second line. The obvious
+alternative was to widen `#panel` past 360px so the labels fit on one line.
+That trades map for text in the band where the map is already down to 400px,
+and 360px is a value the desktop pass set deliberately — a responsive fix
+should not quietly re-open it.
+
+Rejected: extending the ≤480px horizontal-scroll treatment up into this band.
+A scrolling row hides options behind a gesture; on a 768px screen there is
+room to simply show them.
+
+## 2026-08-08 — Selecting a record promotes the sheet out of peek
+
+`applyHashRoute` bumps a peek sheet to half when the route names a parcel,
+owner or operator. Rendering a dossier into a 120px strip showed its address
+and nothing else, which reads as the app ignoring the tap.
+
+`/highlight` routes are excluded: that flow drops to peek on purpose so the
+highlighted parcels are visible, and it would have fought itself.
+
+Rejected: doing this in `showPanel`. Every re-render goes through it —
+including the one `setSnap` triggers when it finds the panel empty — so the
+promotion would have fired on renders that are not navigations.
+
+## 2026-08-08 — Crossing the phone breakpoint re-renders the leaderboards
+
+The tab labels have a phone variant chosen at render time, so the breakpoint
+has to be re-read when it changes. A `resize` listener that fires only on an
+actual crossing (not on every resize tick) re-renders the board.
+
+Rejected: emitting both label variants and switching them with CSS. That puts
+two copies of every label and two ⓘ buttons in the DOM, and the ⓘ carries its
+text in a `data-info-tip` attribute the popover reads — duplicating it invites
+the two copies to drift.
+
+Choices made and why, with rejected alternatives. Newest first.
+
 ## 2026-08-08 — The filter chip is two boxes, and only the label may truncate
 
 Making the chip a flex row with `.filter-chip-label` as the only shrinking

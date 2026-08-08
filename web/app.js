@@ -1579,6 +1579,14 @@ function decodeSegment(raw) {
 
 function applyHashRoute() {
   const hash = location.hash;
+  // Picking a record while the sheet sits at peek used to render the dossier
+  // into a 120px strip showing only its address. A /highlight route is the one
+  // case that genuinely wants the map, so it keeps whatever snap it set.
+  if (/^#\/(parcel|owner|operator)\//.test(hash) && !/\/highlight$/.test(hash) &&
+      window.matchMedia("(max-width: 480px)").matches &&
+      $("#panel").classList.contains("sheet-peek") && window.__setSheetSnap) {
+    window.__setSheetSnap("sheet-half");
+  }
   // Clear the search input address label when navigating away from a parcel
   if (!hash.match(/^#\/parcel\//)) {
     const searchInput = $("#search");
@@ -1669,6 +1677,22 @@ function setupPanelCollapse() {
     if (isPhone() && document.body.classList.contains("panel-collapsed")) {
       document.body.classList.remove("panel-collapsed");
     }
+  });
+}
+
+// The leaderboard tab labels come in two variants, picked when the board is
+// rendered: a short one with an ⓘ button on phones, and the spelled-out one
+// above 480px. Rotating across the breakpoint stranded the wrong variant in the
+// DOM — and since .info-btn is display:none above 480px, a phone turned
+// landscape kept a label whose explanation had become unreachable.
+function setupLeaderboardBreakpointRerender() {
+  const phoneQuery = window.matchMedia("(max-width: 480px)");
+  let wasPhone = phoneQuery.matches;
+  window.addEventListener("resize", () => {
+    if (phoneQuery.matches === wasPhone) return;
+    wasPhone = phoneQuery.matches;
+    hideInfoTip();
+    if (!location.hash || /^#\/top\//.test(location.hash)) renderLeaderboards();
   });
 }
 
@@ -1820,6 +1844,7 @@ async function bootstrap() {
     renderLeaderboards();
   });
   setupPanelCollapse();
+  setupLeaderboardBreakpointRerender();
   setupInfoTipDismiss();
   initMap();
   setupSearch();
