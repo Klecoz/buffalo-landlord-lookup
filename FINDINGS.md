@@ -3,6 +3,33 @@
 Facts about this system discovered while working on it — root causes, surprises,
 dead ends. Not a changelog; see git history for that.
 
+## 2026-08-08 — owner search rides in the address index
+
+- **One file, two row kinds.** `address_index.json` now carries 93,069 address
+  rows followed by 65,072 owner rows (`{t:"o", name, slug, n}`). The file grew
+  from 12.68MB to 17.20MB (+4.52MB, +36%). A separate owner index would have
+  meant a second fetch at bootstrap for the same bytes; the search box already
+  scans the whole list on every keystroke, so the merged list costs one pass
+  over 158,141 entries instead of two passes over 93,069 and 65,072.
+- **Prefix ranking alone is wrong for this data.** Every address row starts with
+  a house number ("100 Main St"), so a street-name query is always a mid-string
+  match for addresses and a prefix match for any LLC named after the street.
+  Ranking purely on match position put "Mainsail Holdings LLC" above every
+  address on Main St. Ordering is kind-first as a result — see DECISIONS.
+- **The escaping test tripped on HTML attribute serialization, not on a hole.**
+  Putting the row's label in a `data-label` attribute made the existing
+  "does not inject raw HTML" assertion fail: `innerHTML` serialization escapes
+  only `&`, `"` and nbsp inside attribute values, so an escaped `&lt;img` reads
+  back as literal `<img` in the string even though the DOM parsed it as an
+  attribute and nothing was injected. The row markup keeps its label in a
+  `.name` span instead, which keeps that assertion meaningful.
+- **jsdom has no `scrollIntoView`.** The search combobox calls it when the
+  highlight moves; jsdom ships no layout and therefore no implementation, so
+  arrow-key coverage needed a stub in `web/tests/setup.js`. This is why the
+  combobox keyboard path had no test until now.
+- `--no-fetch` regeneration is 44 seconds, not the tens of minutes a full run
+  takes — the DOS enrichment reads its cached index and re-emits.
+
 ## 2026-08-07 — planning audit (pre-implementation)
 
 - **"Demolished" is heavily over-flagged.** 8,342 of 93,069 parcels (~9% of the

@@ -195,10 +195,13 @@ def test_pipeline_join_then_emit_produces_expected_artifacts(pipeline_paths):
     assert geo["type"] == "FeatureCollection"
     assert len(geo["features"]) == 3
 
-    # The address index is the {addr,id,...} list the search box reads.
+    # The address index is what the search box reads: {addr,id,...} rows for
+    # every parcel, then one {t:"o",...} row per owner.
     idx = json.loads((web / "address_index.json").read_text())
-    assert isinstance(idx, list) and len(idx) == 3
-    assert {row["addr"] for row in idx} == {"100 MAIN ST", "200 MAIN ST", "300 ELM ST"}
+    assert isinstance(idx, list) and len(idx) == 6
+    assert {row["addr"] for row in idx if "t" not in row} == {
+        "100 MAIN ST", "200 MAIN ST", "300 ELM ST"}
+    assert len([row for row in idx if row.get("t") == "o"]) == 3
 
 
 def test_pipeline_owner_files_per_owner(pipeline_paths):

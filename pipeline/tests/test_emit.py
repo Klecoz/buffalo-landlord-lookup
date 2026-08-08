@@ -892,3 +892,88 @@ def test_emit_slugs_are_all_in_the_alphabet(tmp_path, monkeypatch):
         assert SLUG_ALPHABET.fullmatch(slug), slug
     for f in (tmp_path / "owners").glob("*.json"):
         assert SLUG_ALPHABET.fullmatch(f.stem), f.name
+
+
+# ---------------------------------------------------------------------------
+# address_index.json owner rows — the search box reads addresses and owners
+# out of one file, so owner rows have to be present, typed, and routable.
+# ---------------------------------------------------------------------------
+
+def _emit_index(tmp_path, monkeypatch, parcels):
+    import emit as emit_mod
+
+    monkeypatch.setattr(emit_mod, "WEB_DATA", tmp_path)
+    monkeypatch.setattr(emit_mod, "OWNERS_DIR", tmp_path / "owners")
+    monkeypatch.setattr(emit_mod, "OPERATORS_DIR", tmp_path / "operators")
+    emit_mod.emit({
+        "parcels": parcels,
+        "owners": {
+            p["owner_norm"]: [q["parcel_id"] for q in parcels
+                              if q["owner_norm"] == p["owner_norm"]]
+            for p in parcels
+        },
+        "meta": {},
+    })
+    return json.loads((tmp_path / "address_index.json").read_text())
+
+
+def test_address_index_carries_one_row_per_owner(tmp_path, monkeypatch):
+    parcels = [
+        _emit_parcel("1", "ACME LLC", "acme llc"),
+        _emit_parcel("2", "ACME LLC", "acme llc"),
+        _emit_parcel("3", "INCT HOLDINGS LLC", "inct holdings llc"),
+    ]
+    index = _emit_index(tmp_path, monkeypatch, parcels)
+
+    owners = [r for r in index if r.get("t") == "o"]
+    assert len(owners) == 2
+    assert {o["name"] for o in owners} == {"ACME LLC", "INCT HOLDINGS LLC"}
+    # n is the portfolio size, which is what the search sub-label shows.
+    assert {o["name"]: o["n"] for o in owners} == {"ACME LLC": 2, "INCT HOLDINGS LLC": 1}
+    assert all(set(o) == {"t", "name", "slug", "n"} for o in owners)
+
+
+def test_address_index_owner_slugs_are_in_the_alphabet(tmp_path, monkeypatch):
+    parcels = [
+        _emit_parcel(str(i), name, name.lower())
+        for i, name in enumerate(_ADVERSARIAL_NAMES)
+        if name.strip()
+    ]
+    index = _emit_index(tmp_path, monkeypatch, parcels)
+
+    owners = [r for r in index if r.get("t") == "o"]
+    assert owners
+    for o in owners:
+        assert SLUG_ALPHABET.fullmatch(o["slug"]), o
+
+
+def test_address_index_owner_slugs_resolve_to_portfolio_files(tmp_path, monkeypatch):
+    """A search hit routes to #/owner/<slug>, which fetches owners/<slug>.json —
+    so every slug in the index must name a file that exists."""
+    parcels = [
+        _emit_parcel("1", "José", "josé"),
+        _emit_parcel("2", "Josë", "josë"),
+        _emit_parcel("3", "Josü", "josü"),
+    ]
+    index = _emit_index(tmp_path, monkeypatch, parcels)
+
+    owners = [r for r in index if r.get("t") == "o"]
+    assert len({o["slug"] for o in owners}) == 3
+    for o in owners:
+        assert (tmp_path / "owners" / f"{o['slug']}.json").exists()
+
+
+def test_address_index_address_rows_keep_their_shape(tmp_path, monkeypatch):
+    """Owner rows are additive: address rows must stay untyped and sorted,
+    because the frontend and its tests parse them as they are today."""
+    parcels = [
+        _emit_parcel("2", "ACME LLC", "acme llc"),
+        _emit_parcel("1", "ACME LLC", "acme llc"),
+    ]
+    index = _emit_index(tmp_path, monkeypatch, parcels)
+
+    addresses = [r for r in index if "t" not in r]
+    assert [r["addr"] for r in addresses] == ["1 Main St", "2 Main St"]
+    assert all(set(r) == {"addr", "id", "lat", "lng", "owner_slug"} for r in addresses)
+    # Addresses first, owners after — no interleaving.
+    assert [("t" in r) for r in index] == [False] * len(addresses) + [True] * (len(index) - len(addresses))

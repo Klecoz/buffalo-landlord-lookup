@@ -3,7 +3,8 @@
 Writes to ../web/data/:
   properties.geojson      — every parcel + rolled-up stats (map source)
   owners/<slug>.json      — per-owner portfolio, lazy-loaded on click
-  address_index.json      — list of {addr, parcel_id} for autocomplete search
+  address_index.json      — autocomplete search: address rows {addr, id, …}
+                            followed by owner rows {t:"o", name, slug, n}
   meta.json               — refresh date, row counts, skip counts
 
 Per-owner files keep the initial page payload small. The full owners
@@ -760,6 +761,16 @@ def emit(
         for p in parcels if p["address"] and p["parcel_id"]
     ]
     index.sort(key=lambda x: x["addr"])
+    # Owner names ride in the same file so search stays one fetch. Address rows
+    # keep their shape untouched; only owner rows carry the "t" discriminator,
+    # and they sit after every address row.
+    owner_rows = [
+        {"t": "o", "name": agg["display"], "slug": agg["slug"], "n": agg["properties"]}
+        for agg in by_owner.values()
+        if agg["display"]
+    ]
+    owner_rows.sort(key=lambda x: x["name"])
+    index.extend(owner_rows)
     _atomic_write(WEB_DATA / "address_index.json", index)
 
     # ------------------------------------------------------------------
