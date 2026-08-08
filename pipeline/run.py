@@ -10,10 +10,16 @@ import argparse
 import sys
 import time
 
+import join as join_mod
 from emit import emit
 from fetch import fetch_all
 from join import join_all
 from nys_dos import fetch_and_build_index as nys_dos_fetch_and_build_index
+
+
+def missing_raw_files() -> list[str]:
+    """Names of the raw inputs join_all() needs that aren't on disk."""
+    return [n for n in join_mod.RAW_FILES if not (join_mod.RAW / n).exists()]
 
 
 def main() -> int:
@@ -32,6 +38,21 @@ def main() -> int:
         fetch_all()
     else:
         print("=== FETCH (skipped) ===", file=sys.stderr)
+        missing = missing_raw_files()
+        if missing:
+            print(
+                f"\nerror: --no-fetch needs a populated cache, but "
+                f"{join_mod.RAW} is missing:",
+                file=sys.stderr,
+            )
+            for name in missing:
+                print(f"  {name}", file=sys.stderr)
+            print(
+                "\nRun `python run.py` (without --no-fetch) once to download "
+                "them, then --no-fetch works on later runs.",
+                file=sys.stderr,
+            )
+            return 2
 
     # NYS DOS active-corporations index. Cached for 30 days (DOS publishes
     # monthly), so daily runs hit the disk-cache only. The index is used

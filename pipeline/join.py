@@ -110,6 +110,15 @@ def _sbl_lookup(by_sbl: dict[str, dict], sbl: str | None):
 HERE = Path(__file__).resolve().parent
 RAW = HERE / "raw"
 
+# The raw inputs join_all() reads. run.py checks these exist before starting
+# a --no-fetch run.
+RAW_FILES = (
+    "parcels.geojson",
+    "code_violations.json",
+    "service_requests_311.json",
+    "demolitions.json",
+)
+
 
 # 311 types/subjects we count as housing-quality complaints. Substring match.
 HOUSING_311_KEYWORDS = (

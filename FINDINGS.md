@@ -271,3 +271,7 @@ applied at the next full run.
   geometries have closed rings, so all of them were affected: median
   correction 2.5m, p99 6.3m, max 34.8m. Small next to a city block, but
   systematic and free to fix.
+- **`--no-fetch` against an empty cache died on a bare `FileNotFoundError`**
+  raised from inside `join_all`, naming one file and offering no way forward.
+  It now preflights all four raw inputs, lists every missing one, and points
+  at the command that produces them.
