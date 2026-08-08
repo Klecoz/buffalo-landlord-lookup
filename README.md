@@ -23,7 +23,7 @@ cd ../web && python -m http.server 8000
 All public:
 
 - **data.buffalony.gov** (Socrata API): code violations, 311 service requests, demolition permits
-- **NYS GIS Clearinghouse** (ArcGIS REST FeatureServer): tax parcels w/ owner-of-record, filtered to `COUNTY_NAME='Erie'`
+- **NYS GIS Clearinghouse** (ArcGIS REST FeatureServer): tax parcels w/ owner-of-record, filtered to `MUNI_NAME='Buffalo'`
 - Map tiles: OpenStreetMap via MapLibre GL JS
 
 The pipeline writes a `meta.json` with row counts and refresh date. The footer of every page shows it.

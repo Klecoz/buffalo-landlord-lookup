@@ -2,6 +2,45 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-07 — Violations join gets an SBL fallback, address stays primary
+
+`_join_violations` now tries the row's `sbl` when the normalized address
+matches no parcel. This recovers 18,589 violations (7.4% of the feed) that
+were absent from every owner portfolio and concern score.
+
+Address stays the primary key rather than moving to SBL-first the way
+`_join_demolitions` works. The two feeds differ: 228,379 of 250,586
+violations carry a usable 16-char SBL, but the address is populated on all
+but 62 rows and already matches 229,126 of them, and only 73 address matches
+disagree with the row's SBL. Reordering would rewrite a quarter of a million
+existing matches to chase 73 disagreements. Demolitions went SBL-first for
+the opposite reason — its address field is a single `stname` string and its
+SBL is the more reliable key.
+
+Rejected: matching the 17-char SBLs (a 16-char base plus a trailing letter,
+252 violations and 22 permits) by truncating to `[:16]`. That would match a
+real parcel for about half of them, but it collapses a sub-parcel onto its
+base parcel on a guess about what the letter means.
+
+Note for the next refresh: this raises published violation counts for many
+owners and reorders the leaderboards. The change is a fix, not a
+re-weighting — the rows were always in the source.
+
+## 2026-08-07 — Slugs are capped at 120 characters
+
+`_slugify` truncates. A slug is a filename, filesystems cap names at 255
+bytes, and an over-long owner name would abort the entire emit partway
+through writing 65k portfolios. The assessment roll truncates owner names at
+30 characters and the longest real slug is 46, so this is unreachable today —
+but the input is third-party and the failure is total rather than local.
+
+120 leaves room for the `.json.tmp` suffix with margin. Collisions the cap
+introduces need no new machinery: both slug paths already dedup.
+
+Rejected: hashing long names (unreadable slugs, and the URL is user-facing);
+raising the cap to 255 minus the suffix (a slug that long is unusable in a
+URL anyway, and the roll never produces one).
+
 ## 2026-08-07 — A registered-agent address demotes medium clusters to low
 
 `emit.py` now mirrors its own promotion rule: where a clean NYS DOS check

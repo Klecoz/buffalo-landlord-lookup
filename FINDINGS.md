@@ -373,3 +373,25 @@ applied at the next full run.
   ships full float geometry straight from ArcGIS, which is most of its 65MB.
   A correctness non-issue; flagged as payload weight for whoever owns the
   emit-size question.
+- **`web/data/owners/` accumulates orphans across runs.** emit writes files
+  but never removes ones the current run didn't produce, so slugs from an
+  older normalization survive. Today's run leaves 72 orphan owner files and 7
+  orphan operator files (~45KB) — all from before the Item-2 change that drops
+  "and" from `owner_norm` (`adam-mickiewicz-library-and`,
+  `andrews-robert-i-and`, …). Harmless to the frontend, which only requests
+  slugs named in `properties.geojson`, but they do get uploaded on deploy.
+  Left alone here: pruning the directory is an emit change a later item owns.
+- **`fetch.py` has no retry.** Timeouts are generous (180s Socrata, 240s
+  ArcGIS) but a single transient failure aborts the whole fetch. The atomic
+  writes mean the previous cache survives intact, so the recovery is just
+  re-running — noted as a robustness gap, not a correctness bug.
+- **The ArcGIS query sends no `orderByFields`.** The layer reports
+  `supportsPagination: true` and returned exactly the 93,440 features
+  `returnCountOnly` promises, so paging is stable in practice. Unlike SODA,
+  ArcGIS orders by the OID field by default when paginating. Left as is; the
+  consequence if it ever drifts is a reshuffled parcel feed, which only
+  matters for slug-collision tie-breaks (currently zero).
+- **`parcel_id` is unique across all 93,069 parcel records** (0 duplicates, 0
+  empty), so `emit`'s `by_id` map can't drop a parcel or double-count one into
+  an owner's aggregate. The 20-char SBL is unique across all 93,440 raw
+  features too.
