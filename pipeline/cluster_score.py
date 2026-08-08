@@ -219,12 +219,36 @@ def _is_llc_like(name: str) -> bool:
     return bool(_LLC_MARKER_RE.search(name))
 
 
+# A name ending in one of these is an organization, so first+last token is
+# not a person signature. _LLC_MARKER_RE only catches the abbreviated forms,
+# which leaves "Acme Bearings Corporation" looking like a person named
+# {ACME, CORPORATION} — enough to fake the alter-ego (person + LLC) pattern,
+# and enough to merge two unrelated organizations whose first and last tokens
+# agree ("St Clare Apartments" / "St Patrick Village Apartments").
+#
+# Business vocabulary only. "Church" is deliberately absent: the roll holds
+# four correct church-name merges under the old rule and no incorrect one.
+_ORG_TAIL_TOKENS = frozenset({
+    # Legal forms, including the long spellings normalize_owner canonicalizes
+    "llc", "inc", "corp", "corporation", "corporations", "incorporated",
+    "co", "company", "lp", "llp", "ltd", "limited", "trust",
+    # Generic business nouns that end an organization's name
+    "holdings", "holding", "properties", "property", "realty", "rentals",
+    "rental", "investments", "investment", "group", "enterprises",
+    "enterprise", "management", "mgmt", "associates", "partners",
+    "partnership", "development", "developments", "apartments", "apartment",
+    "housing", "ministries", "fund",
+})
+
+
 def _person_signature(name: str) -> Optional[frozenset[str]]:
     """Return {first_token, last_token} (uppercased), or None.
 
     Handles "SMITH, JOHN", "SMITH, JOHN A", "JOHN SMITH", "JOHN A SMITH".
     Doesn't try to disambiguate first-vs-last when comma is absent — the
-    set form makes ordering irrelevant for matching.
+    set form makes ordering irrelevant for matching. Returns None for names
+    that end in organization vocabulary; the comma form is unambiguously
+    "LAST, FIRST" and needs no such guard.
     """
     cleaned = re.sub(r"[^\w\s,]", " ", name).strip()
     if not cleaned:
@@ -240,6 +264,8 @@ def _person_signature(name: str) -> Optional[frozenset[str]]:
     else:
         toks = cleaned.split()
         if len(toks) < 2:
+            return None
+        if toks[-1].lower() in _ORG_TAIL_TOKENS:
             return None
         first, last = toks[0], toks[-1]
     if len(first) < 2 or len(last) < 2:

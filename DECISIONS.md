@@ -2,6 +2,28 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-07 — A name ending in business vocabulary is not a person
+
+`_person_signature` returns None when the last token of a non-comma name is
+business vocabulary (legal forms plus generic nouns: holdings, properties,
+associates, apartments, housing, management, …). This stops organizations from
+faking the alter-ego pattern and from merging with each other on a first+last
+token coincidence.
+
+The trade is real and was measured: the guard removes 5 false organization
+merges and also 5 correct ones (typo pairs like "Eversmile Trade Corporation" /
+"Eversmile Traders Corporation", "Nickel City Property Holding" / "Nickel City
+Properties Holding"). It is worth taking because a false merge asserts a
+relationship between two landlords that does not exist, while a false split
+merely fails to assert one — on an accountability site the first is the worse
+error. "Church" is excluded from the list for the opposite reason: the roll
+holds four correct church-name merges under it and no incorrect one.
+
+Rejected: extending `_LLC_MARKER_RE` to the long forms instead (fixes the
+"Corporation" cases but not the suffix-less organizations, which is where the
+worst merges are); an organization-name allowlist or fuzzy comparison (both
+out of scope per the simplicity rule).
+
 ## 2026-08-07 — Drop the conjunction "and" from owner keys
 
 `normalize_owner` deletes the standalone token "and", matching what

@@ -93,6 +93,19 @@ cluster the NYS DOS join flagged as a registered-agent address).
   The cohesion scorer already treated "and" as a stopword, so the two layers
   disagreed about whether the word carried identity.
 
+- **Organization names were being read as people.** `_LLC_MARKER_RE`
+  recognizes only the abbreviated legal forms, so 150 owner displays ending in
+  "Corporation", "Incorporated" or "Company" — and every organization with no
+  legal suffix at all — fell through to `_person_signature` and got a bogus
+  {first, last} key. Two consequences, both confirmed in the emitted set:
+  28 of the 262 alter-ego clusters were pairs of *companies*, not a person and
+  an LLC ("Acme Bearings Corporation" + "Acme Bearing Corp"); and four
+  organization pairs were merged into one owner because their first and last
+  tokens agreed — "St Clare Apartments" with "St Patrick Village Apartments",
+  "SRK 2020 Elmwood Associates" with "SRK 770 Elmwood Associates", "St John
+  Townhomes II Housing" with "St Martin Village Housing", "Peninsula Property
+  Holdings" with "Peninsula Wholesale Holdings".
+
 ### Known limitations, measured but deliberately not fixed
 
 - **A two-owner cluster can never score below 0.5.** The cohesion formula is

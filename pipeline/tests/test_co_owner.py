@@ -99,3 +99,18 @@ def test_suppress_lets_a_three_operator_collision_through():
     key = frozenset({"IN", "CHRIST"})
     index = {key: ["op-a", "op-b", "op-c"]}
     assert suppress_common_names(index) == index
+
+
+def test_parse_skips_organization_names_without_a_legal_suffix():
+    """ADD_OWNER carries organization boilerplate, not only humans.
+
+    "Housing Development Fund" is the tail of an HDFC name and used to key
+    as the person {HOUSING, FUND}, linking unrelated nonprofit operators to
+    each other. See FINDINGS.md 2026-08-07.
+    """
+    assert parse_co_owner("Housing Development Fund") is None
+    assert parse_co_owner("Acme Bearings Corporation") is None
+    assert parse_co_owner("St Clare Apartments") is None
+    # A human co-owner is untouched.
+    assert parse_co_owner("Ricottone, Anthony") is not None
+    assert parse_co_owner("Anthony Ricottone") is not None

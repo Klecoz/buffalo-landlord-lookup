@@ -382,3 +382,58 @@ def test_service_address_po_box_never_shared_owner():
     matches and its zero count carries no information."""
     assert classify_service_address(0, "po_box") == "unknown"
     assert classify_service_address(29, "po_box") == "unknown"
+
+
+# --- organization names are not persons ---------------------------------
+#
+# _LLC_MARKER_RE only recognizes the abbreviated legal forms, so the long
+# spellings ("Corporation", "Incorporated", "Company") and suffix-less
+# organization names used to fall through to _person_signature. Real cases
+# from the 2026-05-10 emit; see FINDINGS.md 2026-08-07.
+
+def test_dedup_does_not_merge_two_organizations_by_first_and_last_token():
+    """Real false merge: two different subsidized buildings became one owner.
+
+    "St Clare Apartments" and "St Patrick Village Apartments" both reduce to
+    {ST, APARTMENTS} under the old signature and were merged inside the
+    yw-wny-housing-developmen cluster.
+    """
+    groups = dedup_persons_in_cluster([
+        _owner("st-clare-apartments", "St Clare Apartments", 1),
+        _owner("st-patrick-village-apartments", "St Patrick Village Apartments", 1),
+    ])
+    assert len(groups) == 2
+    assert all(g["variants"] == [] for g in groups)
+
+
+def test_dedup_does_not_merge_two_associates_partnerships():
+    """"SRK 2020 Elmwood Associates" and "SRK 770 Elmwood Associates" are
+    separate partnerships for separate buildings; both keyed {SRK,
+    ASSOCIATES}."""
+    groups = dedup_persons_in_cluster([
+        _owner("srk-2020-elmwood-associates", "SRK 2020 Elmwood Associates", 1),
+        _owner("srk-770-elmwood-associates", "SRK 770 Elmwood Associates", 1),
+    ])
+    assert len(groups) == 2
+
+
+def test_classify_alter_ego_does_not_fire_for_long_form_corporation():
+    """Real false promotion: a pair of company name variants read as
+    person + LLC because "Corporation" is not in _LLC_MARKER_RE.
+
+    "Acme Bearings Corporation" + "Acme Bearing Corp" is one company under
+    two spellings, not a resident unmasking their LLC.
+    """
+    verdict = classify_cluster(
+        ["Acme Bearings Corporation", "Acme Bearing Corp"], "street"
+    )
+    assert verdict["pattern"] is None
+    # Still kept and still high — the names themselves are cohesive.
+    assert verdict["confidence"] == "high"
+
+
+def test_classify_alter_ego_survives_for_a_real_person():
+    """The rule must keep firing on the signal the site exists to surface."""
+    verdict = classify_cluster(["Aurum Apartments LLC", "Michaels Paul"], "street")
+    assert verdict["pattern"] == "alter_ego"
+    assert verdict["confidence"] == "high"
