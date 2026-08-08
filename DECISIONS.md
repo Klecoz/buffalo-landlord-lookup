@@ -2,6 +2,27 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — Search results order addresses first, owners second
+
+Owner names now match in the same search box as addresses, which needs a rule
+for mixing two kinds of hit in twelve rows.
+
+Rejected: rank purely by match position (prefix beats mid-string) across both
+kinds. It reads well in the abstract and fails on this data — address rows begin
+with a house number, so "main" is a mid-string match for "100 Main St" and a
+prefix match for "Mainsail Holdings LLC", and the LLC displaces the whole street.
+
+Taken: addresses first, owners after, prefix matches first within each kind.
+This is an address lookup that also knows owner names, not a general search.
+The one wrinkle is that a common street word would fill all twelve rows with
+addresses and hide a matching landlord, so owners keep a floor of three rows
+whenever any owner matches. "clover" lands on ten Cloverdale addresses plus
+Clover Homesource LLC and Lucky Penny Four Leaf Clover.
+
+Rejected: a second index file for owners. Extending `address_index.json` costs
++4.5MB on a file already being fetched, against a second request and a second
+scan for the same data.
+
 ## 2026-08-08 — The tablet colophon keeps its clipped tail
 
 Between 481 and 880px the colophon spans the full width under an opaque 360px
@@ -18,8 +39,6 @@ flex items and overflow the padding.
 Left as is. The refresh date is also in the masthead, which is where a reader
 looks for it, and the sources line is attribution this tool should not drop to
 save 25px.
-
-Choices made and why, with rejected alternatives. Newest first.
 
 ## 2026-08-08 — "Demo" is a column head, not a card label
 
@@ -53,8 +72,6 @@ notch or a home indicator — the correct outcome, reached by not opting in.
 Adding `viewport-fit=cover` would put the burden on every bottom-pinned element
 here (sheet, colophon, legend, chip, reopen pill) and cannot be verified
 without a notched device.
-
-Choices made and why, with rejected alternatives. Newest first.
 
 ## 2026-08-08 — The tablet band gets wrapping, not a wider panel
 
@@ -93,8 +110,6 @@ two copies of every label and two ⓘ buttons in the DOM, and the ⓘ carries it
 text in a `data-info-tip` attribute the popover reads — duplicating it invites
 the two copies to drift.
 
-Choices made and why, with rejected alternatives. Newest first.
-
 ## 2026-08-08 — The filter chip is two boxes, and only the label may truncate
 
 Making the chip a flex row with `.filter-chip-label` as the only shrinking
@@ -124,8 +139,6 @@ Not fixed, deliberately: `.panel-handle` is 28px tall. That clears WCAG 2.5.8
 height. Growing it to 44px would push `#panel-close` and the panel's top
 padding down with it and cost 16px of the 120px peek content — the state where
 content is scarcest.
-
-Choices made and why, with rejected alternatives. Newest first.
 
 ## 2026-08-08 — The accent is scoped to boards that measure harm
 

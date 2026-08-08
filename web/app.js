@@ -1449,10 +1449,15 @@ function setupSearch() {
   };
 
   // Open a result. Shared by mouse and keyboard so both paths behave the same.
+  // Only real options carry role="option"; the "No matches" row doesn't, which
+  // is what keeps it unselectable.
   const choose = (li) => {
-    if (!li || !li.dataset.id) return;
-    input.value = li.textContent;
+    if (!li || li.getAttribute("role") !== "option") return;
+    // Owner rows carry a "42 properties" sub-label, so the text to echo back
+    // into the input is the name span, not the whole row.
+    input.value = (li.querySelector(".name") || li).textContent;
     setListOpen(false);
+    if (li.dataset.slug) { window.openPortfolio(li.dataset.slug); return; }
     const lat = parseFloat(li.dataset.lat), lng = parseFloat(li.dataset.lng);
     if (!isNaN(lat) && !isNaN(lng)) {
       state.map.flyTo({ center: [lng, lat], zoom: 18 });
@@ -1478,18 +1483,46 @@ function setupSearch() {
     li.scrollIntoView({ block: "nearest" });
   };
 
+  const RESULT_CAP = 12;
+  // Addresses lead the list — this is an address search first, and every
+  // address starts with a house number, so a street-name query is a mid-string
+  // match for addresses but a prefix match for any LLC named after the street.
+  // Ranking on prefix alone would therefore bury Main St under Mainsail LLC.
+  // Owners keep a few rows regardless, or a street shared with an LLC name
+  // would push the landlord off the list entirely.
+  const OWNER_RESERVE = 3;
+
+  const rowHtml = (m, i) => {
+    const id = `search-opt-${i}`;
+    if (m.t === "o") {
+      const n = Number(m.n) || 0;
+      return `<li id="${id}" role="option" class="owner-hit" data-slug="${escapeHtml(m.slug)}"><span class="name">${escapeHtml(m.name)}</span><span class="sub">${n} ${n === 1 ? "property" : "properties"}</span></li>`;
+    }
+    return `<li id="${id}" role="option" data-id="${escapeHtml(m.id)}" data-lat="${m.lat ?? ''}" data-lng="${m.lng ?? ''}">${escapeHtml(m.addr)}</li>`;
+  };
+
   input.addEventListener("input", () => {
     const q = input.value.trim().toUpperCase();
     if (q.length < 3) { setListOpen(false); return; }
-    const matches = state.addressIndex
-      .filter((a) => a.addr.toUpperCase().includes(q))
-      .slice(0, 12);
+    // address_index.json holds both kinds in one list; owner rows are the ones
+    // tagged t === "o".
+    const addrs = [], owners = [];
+    for (const m of state.addressIndex) {
+      const at = String((m.t === "o" ? m.name : m.addr) ?? "").toUpperCase().indexOf(q);
+      if (at >= 0) (m.t === "o" ? owners : addrs).push({ m, prefix: at === 0 });
+    }
+    // Within a kind, a match at the start of the label wins. Array#sort is
+    // stable, so ties keep the index's own A–Z order.
+    const byPrefix = (a, b) => (a.prefix === b.prefix ? 0 : a.prefix ? -1 : 1);
+    addrs.sort(byPrefix);
+    owners.sort(byPrefix);
+    const ownerTake = Math.min(owners.length, Math.max(OWNER_RESERVE, RESULT_CAP - addrs.length));
+    const matches = addrs.slice(0, RESULT_CAP - ownerTake).concat(owners.slice(0, ownerTake))
+      .map(s => s.m);
     if (matches.length === 0) {
       results.innerHTML = `<li class="empty">No matches</li>`;
     } else {
-      results.innerHTML = matches.map((m, i) =>
-        `<li id="search-opt-${i}" role="option" data-id="${escapeHtml(m.id)}" data-lat="${m.lat ?? ''}" data-lng="${m.lng ?? ''}">${escapeHtml(m.addr)}</li>`
-      ).join("");
+      results.innerHTML = matches.map(rowHtml).join("");
     }
     setListOpen(true);
   });
@@ -1498,7 +1531,7 @@ function setupSearch() {
     const open = results.classList.contains("open");
     if (e.key === "Escape") { setListOpen(false); return; }
     if (!open) return;
-    const options = $$("#search-results li[data-id]");
+    const options = $$('#search-results li[role="option"]');
     if (options.length === 0) return;
     const at = options.findIndex(li => li.classList.contains("active"));
     if (e.key === "ArrowDown") {

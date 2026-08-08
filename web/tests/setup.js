@@ -82,6 +82,9 @@ beforeAll(async () => {
   }
   global.fetch = makeFetchMock()
   window.matchMedia = vi.fn(() => ({ matches: false }))
+  // jsdom has no layout, so it ships no scrollIntoView. The search combobox
+  // calls it to keep the highlighted option visible.
+  Element.prototype.scrollIntoView = vi.fn()
 
   injectDOM()
 

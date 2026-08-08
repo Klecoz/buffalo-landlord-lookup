@@ -132,6 +132,22 @@ button { font-family: inherit; }
   background: var(--paper-2);
   border-left-color: var(--ink);
 }
+/* Owner hits sit in the same list as addresses. The portfolio size is the one
+   thing that tells them apart at a glance, so it goes on its own line in mono
+   rather than dressing the row up with a badge. */
+#search-results li.owner-hit .name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#search-results li.owner-hit .sub {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
 #search-results li.empty { color: var(--ink-2); cursor: default; }
 #search-results li.empty:hover { background: transparent; border-left-color: transparent; }
 
