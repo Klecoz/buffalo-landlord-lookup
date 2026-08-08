@@ -1603,10 +1603,38 @@ ul.violation-types li:last-child {
 /* ======================================================================== */
 
 /* ----- Focus-visible rings for interactive elements --------------------- */
+/* Anything omitted here falls back to the user-agent ring, which in Chrome is
+   a blue that exists nowhere else on this page. The list is the full
+   focusable inventory, not a sample. */
 #filter-chip:focus-visible,
+#reopen-panel:focus-visible,
+#panel-close:focus-visible,
+#panel-collapse:focus-visible,
 .tabs button:focus-visible,
 .kind-toggle button:focus-visible,
-.leaderboard li:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+button.cta:focus-visible,
+.copy-link-btn:focus-visible,
+.csv-btn:focus-visible,
+.dossier-chip:focus-visible,
+.info-btn:focus-visible,
+.audit-details > summary:focus-visible,
+.audit-val a:focus-visible,
+.maplibregl-ctrl-group button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Rows butt against their neighbours' hairlines, so their ring sits inside the
+   row rather than straddling the rule above it. */
+.leaderboard li:focus-visible,
+#search-results li:focus-visible,
+table.portfolio tbody tr:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* The search field already answers focus by darkening its underline; an
+   outline on top of that would be two indicators for one state. */
 
 /* ----- Reduced motion --------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {

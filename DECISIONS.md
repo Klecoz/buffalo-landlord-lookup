@@ -2,6 +2,33 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — Clickable rows get tabindex, not a wrapped button
+
+Leaderboard rows, LLC rows and property rows are `<li>` and `<tr>` elements
+with click listeners. The textbook fix is to put a real `<button>` or `<a>`
+inside each row, which is what a screen reader wants to hear. It is also a
+`<button>` inside a `<td>` in a table whose columns are the point, and it
+would have meant reworking the markup of four render paths and their tests.
+
+They get `tabindex="0"`, `role="button"` on the list items, and a keydown that
+forwards Enter/Space to the element's own `click()`. The existing click
+listeners stay the single implementation — the keyboard path cannot drift from
+the mouse path because it literally calls it.
+
+Rejected: a delegated keydown on `#panel`. The rows are wired per render and
+one more listener there would split the wiring across two places.
+
+## 2026-08-08 — Search is a combobox with aria-activedescendant
+
+Arrow keys move a highlight while focus stays in the input, so typing to
+refine a query keeps working mid-navigation. A roving tabindex would move
+focus into the list and break that.
+
+`.open` on the list and `aria-expanded` on the input are set through one
+helper. They were going to drift otherwise: the class is toggled from five
+places (input, Escape, selection, outside click, short query) and the tests
+assert on the class, so the class had to stay.
+
 ## 2026-08-08 — The legend shows two keys, not one five-step ramp
 
 `s0`-`s3` are buckets of a violation count; `s4` means "demolition permit and

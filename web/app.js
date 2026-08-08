@@ -287,6 +287,26 @@ function showPanel(html) {
       window.gotoParcel(tr.dataset.parcelId, parseFloat(tr.dataset.lat), parseFloat(tr.dataset.lng));
     });
   });
+  // Leaderboard rows, LLC rows and property rows navigate on click but are
+  // <li>/<tr>, so nothing put them in the tab order or answered Enter. The
+  // click listeners above (and the ones each render function adds after this
+  // returns) are what actually run — keydown just forwards to them.
+  makeRowsFocusable("#panel .leaderboard li, #panel tr[data-parcel-id]");
+}
+
+// Give a click-driven row the keyboard behaviour its role implies. Kept to
+// tabindex + Enter/Space rather than wrapping every row in a <button>, which
+// would put a button inside a <td> and change the table's semantics.
+function makeRowsFocusable(selector) {
+  $$(selector).forEach(el => {
+    el.setAttribute("tabindex", "0");
+    if (el.tagName === "LI") el.setAttribute("role", "button");
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      el.click();
+    });
+  });
 }
 function hidePanel() {
   // "Close" returns to leaderboards rather than hiding the panel entirely;
@@ -1390,27 +1410,22 @@ function setupSearch() {
   const input = $("#search");
   const results = $("#search-results");
 
-  input.addEventListener("input", () => {
-    const q = input.value.trim().toUpperCase();
-    if (q.length < 3) { results.classList.remove("open"); return; }
-    const matches = state.addressIndex
-      .filter((a) => a.addr.toUpperCase().includes(q))
-      .slice(0, 12);
-    if (matches.length === 0) {
-      results.innerHTML = `<li class="empty">No matches</li>`;
-    } else {
-      results.innerHTML = matches.map(m =>
-        `<li data-id="${escapeHtml(m.id)}" data-lat="${m.lat ?? ''}" data-lng="${m.lng ?? ''}">${escapeHtml(m.addr)}</li>`
-      ).join("");
+  // The listbox's visibility lives in one place so aria-expanded can never
+  // drift from the .open class the stylesheet reads.
+  const setListOpen = (open) => {
+    results.classList.toggle("open", open);
+    input.setAttribute("aria-expanded", open ? "true" : "false");
+    if (!open) {
+      input.removeAttribute("aria-activedescendant");
+      $$("#search-results li.active").forEach(el => el.classList.remove("active"));
     }
-    results.classList.add("open");
-  });
+  };
 
-  results.addEventListener("click", (e) => {
-    const li = e.target.closest("li");
+  // Open a result. Shared by mouse and keyboard so both paths behave the same.
+  const choose = (li) => {
     if (!li || !li.dataset.id) return;
     input.value = li.textContent;
-    results.classList.remove("open");
+    setListOpen(false);
     const lat = parseFloat(li.dataset.lat), lng = parseFloat(li.dataset.lng);
     if (!isNaN(lat) && !isNaN(lng)) {
       state.map.flyTo({ center: [lng, lat], zoom: 18 });
@@ -1423,10 +1438,60 @@ function setupSearch() {
     } else {
       selectParcel(li.dataset.id);
     }
+  };
+
+  // Move the highlight without moving focus — focus stays in the input so the
+  // user can keep typing, which is why this is aria-activedescendant and not
+  // a roving tabindex.
+  const highlight = (li) => {
+    $$("#search-results li.active").forEach(el => el.classList.remove("active"));
+    if (!li) { input.removeAttribute("aria-activedescendant"); return; }
+    li.classList.add("active");
+    input.setAttribute("aria-activedescendant", li.id);
+    li.scrollIntoView({ block: "nearest" });
+  };
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toUpperCase();
+    if (q.length < 3) { setListOpen(false); return; }
+    const matches = state.addressIndex
+      .filter((a) => a.addr.toUpperCase().includes(q))
+      .slice(0, 12);
+    if (matches.length === 0) {
+      results.innerHTML = `<li class="empty">No matches</li>`;
+    } else {
+      results.innerHTML = matches.map((m, i) =>
+        `<li id="search-opt-${i}" role="option" data-id="${escapeHtml(m.id)}" data-lat="${m.lat ?? ''}" data-lng="${m.lng ?? ''}">${escapeHtml(m.addr)}</li>`
+      ).join("");
+    }
+    setListOpen(true);
   });
 
+  input.addEventListener("keydown", (e) => {
+    const open = results.classList.contains("open");
+    if (e.key === "Escape") { setListOpen(false); return; }
+    if (!open) return;
+    const options = $$("#search-results li[data-id]");
+    if (options.length === 0) return;
+    const at = options.findIndex(li => li.classList.contains("active"));
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      highlight(options[at < 0 || at === options.length - 1 ? 0 : at + 1]);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      highlight(options[at <= 0 ? options.length - 1 : at - 1]);
+    } else if (e.key === "Enter") {
+      // No highlight yet means "open the first match" — the same thing the
+      // list is already showing at the top.
+      e.preventDefault();
+      choose(at < 0 ? options[0] : options[at]);
+    }
+  });
+
+  results.addEventListener("click", (e) => choose(e.target.closest("li")));
+
   document.addEventListener("click", (e) => {
-    if (!$("#search-row").contains(e.target)) results.classList.remove("open");
+    if (!$("#search-row").contains(e.target)) setListOpen(false);
   });
 }
 
@@ -1683,6 +1748,18 @@ function setupBottomSheet() {
 
 async function bootstrap() {
   $("#filter-chip").addEventListener("click", clearMapFilter);
+  // The panel scrolls its own content, so on a long dossier the × has scrolled
+  // out of reach by the time you have read to the bottom. Escape is the way
+  // back out that does not depend on where you are in the panel.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if ($("#panel").classList.contains("hidden")) return;
+    // Let the search listbox and the info tip take Escape first — they are the
+    // more local thing the user is trying to dismiss.
+    if ($("#search-results").classList.contains("open")) return;
+    if (document.activeElement === $("#search")) return;
+    $("#panel-close").click();
+  });
   $("#panel-close").addEventListener("click", (e) => {
     state.selectedId = null;
     state.lastPortfolio = null;

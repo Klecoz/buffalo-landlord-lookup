@@ -606,3 +606,39 @@ had no element of its own — the rows now emit `<span class="audit-val">`.
 Separately, a 16-LLC operator printed the key `MEMBER` sixteen times down the
 left column. The repeats are still in the DOM (screen readers and the tests
 read them); CSS hides the duplicate ink via `[data-key-repeat]`.
+
+### Every row that acts like a link was mouse-only
+
+`.leaderboard li`, `.leaderboard.llc-list li`, `table.portfolio tbody tr` and
+`#search-results li` all carried click listeners and none carried `tabindex`.
+Enumerating the document's focusables at 1440px returned the search field, the
+MapLibre controls, the filter chip and the panel's buttons — not one row. The
+whole leaderboard, every portfolio table and the address dropdown were
+unreachable without a mouse.
+
+`style.css` already had a `.leaderboard li:focus-visible` rule and a
+`#search-results li.active` rule. Both were dead: nothing could focus an `li`,
+and nothing ever set `.active`. The styling for keyboard search had been
+written and never wired.
+
+### Focus rings were Chrome blue on eleven of thirteen focusable elements
+
+The `:focus-visible` block covered `#filter-chip`, `.tabs button`,
+`.kind-toggle button` and `.leaderboard li` (the last of which could not be
+focused). Everything else — panel close and collapse, Copy link, Download CSV,
+the CTAs, the dossier filter chips, the audit disclosure, the map controls —
+fell through to the user-agent ring. Confirmed by tabbing to `#panel-close`
+and reading `outline: rgb(0, 95, 204) auto 1px`.
+
+### The panel's only exit scrolls away
+
+`#panel-close` and `#panel-collapse` are absolutely positioned inside `#panel`,
+which is itself the scroll container (measured 2141px of content in an 868px
+viewport on a 21-violation dossier). Read to the bottom and there is no
+control on screen to leave the view. There was no Escape handler either — the
+only one in the file dismisses the leaderboard info tip.
+
+Making the buttons sticky would have fought `#panel`'s `translateX` slide, so
+Escape carries this instead; it delegates to the existing `#panel-close`
+click handler and therefore inherits its route-aware behaviour (back to the
+leaderboards from a record, collapse to the rail from the leaderboards).
