@@ -671,3 +671,54 @@ def test_cluster_audit_common_co_owner_suppressed_from_links():
         # ... but no linked_operator entry uses Smith as the linking key.
         for L in cluster["audit"]["linked_operators"]:
             assert L["co_owner"] != "Smith, John"
+
+
+def test_registered_agent_address_demotes_medium_to_low():
+    """Real false merge: two unrelated LLCs at 90 State St, Albany.
+
+    That address is the most heavily used filing-service address in New
+    York — the NYS DOS index records 19,467 businesses there — yet the
+    cluster shipped at medium confidence on the strength of the shared
+    address alone. The DOS classification existed and was displayed but was
+    never allowed to count against a cluster. See FINDINGS.md 2026-08-07.
+    """
+    addr = "90 STATE ST | ALBANY | NY | 12207"
+    by_owner = {
+        "black cloud development llc": _owner_agg(
+            "black-cloud-development-llc", "Black Cloud Development LLC", {addr: 4}, 4
+        ),
+        "northstar acquisition llc": _owner_agg(
+            "northstar-acquisition-llc", "Northstar Acquisition LLC", {addr: 2}, 2
+        ),
+    }
+
+    # Without the DOS index there is no counter-evidence: medium stands.
+    clusters_no_dos, _, _ = _build_operator_clusters(by_owner)
+    assert next(iter(clusters_no_dos.values()))["confidence"] == "medium"
+
+    clusters, _, counts = _build_operator_clusters(
+        by_owner, agent_address_index={addr: 19_467}, dos_max_date="2026-05-08",
+    )
+    cluster = next(iter(clusters.values()))
+    assert cluster["confidence"] == "low"
+    assert counts["low"] == 1
+    assert counts["medium"] == 0
+    assert "19,467 businesses" in cluster["evidence"]
+    assert cluster["audit"]["service_address"]["classification"] == "registered_agent"
+
+
+def test_registered_agent_address_leaves_a_cohesive_family_alone():
+    """A real operator may well file through an agent. When the names
+    themselves already form a family, the address is not what is holding
+    the cluster together, so the counter-evidence does not apply."""
+    addr = "80 STATE ST | ALBANY | NY | 12207"
+    by_owner = {
+        f"hertel {i} llc": _owner_agg(f"hertel-{i}-llc", f"Hertel {i} LLC", {addr: 3}, 5)
+        for i in range(4)
+    }
+    clusters, _, _ = _build_operator_clusters(
+        by_owner, agent_address_index={addr: 5_000},
+    )
+    cluster = next(iter(clusters.values()))
+    assert cluster["confidence"] == "high"
+    assert "registered-agent" not in cluster["evidence"]

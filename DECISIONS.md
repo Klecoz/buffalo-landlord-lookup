@@ -2,6 +2,26 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-07 — A registered-agent address demotes medium clusters to low
+
+`emit.py` now mirrors its own promotion rule: where a clean NYS DOS check
+lifts low → medium, a `registered_agent` classification drops medium → low.
+This is the use REGISTERED_AGENT_THRESHOLD was defined for and had never been
+put to.
+
+Only medium is touched. A medium cluster is one the shared address is
+carrying, and that address has just been discredited; a high cluster's names
+already form a family, and a genuine operator may perfectly well file through
+an agent. On the emitted set the rule demotes 17 clusters and leaves one high
+cluster (93-nyrpt-llc, cohesion 0.6) alone — so it needs no cohesion threshold
+of its own, and none is introduced.
+
+Rejected: dropping these clusters outright (the shared address is still a real
+fact, and the seven registered-agent clusters already at low are published the
+same way); demoting on cohesion score instead of confidence band (identical
+result on real data, at the cost of duplicating classify_cluster's 0.6 bar in
+a second module).
+
 ## 2026-08-07 — PO-box auto-trust requires at least one business entity
 
 The "<= 8 owners sharing one PO box → high confidence" rule now also requires

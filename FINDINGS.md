@@ -125,6 +125,28 @@ cluster the NYS DOS join flagged as a registered-agent address).
   precisely because it differs from the property address, so the
   non-self-mail filter does not catch it.
 
+- **The registered-agent detection never counted against anything.** The
+  NYS DOS join classifies a mailing address as `registered_agent` at >= 100
+  businesses, and the constant's own comment calls that "counter-evidence to
+  the 'real shared owner' hypothesis" — but the only place the classification
+  was read promoted low → medium on a *clean* address. A pool address could
+  not demote. 25 clusters carry the flag; 17 of them shipped at medium
+  confidence, including 90 State St Albany (19,467 businesses — the busiest
+  filing-service address in New York), 418 Broadway Albany (89,862), 1220 N
+  Market St Wilmington (307, a Delaware agent) and 99 Wall St New York
+  (2,060). Together 159 parcels across 77 member owners.
+
+### Net effect of the five fixes
+
+Replaying the new classification over the emitted clusters with their member
+lists held fixed moves 44 of 2,204 clusters (2%): high 1,330 → 1,321, medium
+855 → 847, low 19 → 36. Seventeen mediums drop to low (the registered-agent
+pools), fourteen highs drop to medium (organization pairs that were posing as
+alter-egos, plus the two person-only PO boxes), and eight mediums rise to high
+— genuine person + LLC alter-egos that the trailing-initial bug had hidden.
+Owner-level membership will shift a little further once the `&`/"and" merge is
+applied at the next full run.
+
 ### Known limitations, measured but deliberately not fixed
 
 - **A two-owner cluster can never score below 0.5.** The cohesion formula is

@@ -245,6 +245,24 @@ def _build_operator_clusters(
                 ),
             }
 
+        # Demote medium → low when DOS says the address IS a service pool.
+        # The mirror of the promotion above, and the use REGISTERED_AGENT_
+        # THRESHOLD was defined for ("counter-evidence to the 'real shared
+        # owner' hypothesis") but never actually put to. A medium cluster is
+        # one the shared address is carrying — and the address just lost its
+        # credibility. High clusters are left alone: their names already form
+        # a family, and a real operator may well file through an agent.
+        elif verdict["confidence"] == "medium" and sa_classification == "registered_agent":
+            verdict = {
+                **verdict,
+                "confidence": "low",
+                "evidence": (
+                    verdict["evidence"]
+                    + f" — but NYS DOS records {sa_count:,} businesses at this address, "
+                    "so it is a registered-agent or filing-service pool"
+                ),
+            }
+
         counts[verdict["confidence"]] += 1
 
         # Build cluster.
