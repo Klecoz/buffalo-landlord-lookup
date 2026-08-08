@@ -485,3 +485,194 @@ def test_violation_type_counts_survive_the_trim_to_25():
     p = parcels[0]
     assert p["code_violations_total"] == 30
     assert dict(p["violation_type_counts"]) == {"Section 308": 26, "Section 604": 4}
+
+
+# --- 12-month window arithmetic (suspects cleared) ----------------------
+
+
+def _cutoff_for(max_open_date: str) -> str:
+    """Run _join_311 against one unmatched row and read back the window it
+    used, by probing with rows either side of the boundary."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "100", "LOC_STREET": "Main", "PRIMARY_OWNER": "X",
+         "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    rows = [
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": max_open_date},
+    ]
+    _join_311(by_addr, rows)
+    return parcels[0]
+
+
+def test_311_leap_day_anchor_falls_back_to_feb_28():
+    """The Feb-29 branch exists because 2023-02-29 is not a date. It must
+    fire only for a Feb-29 anchor, and land on Feb 28."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "100", "LOC_STREET": "Main", "PRIMARY_OWNER": "X",
+         "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    rows = [
+        # Anchor: a leap day.
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2024-02-29T00:00:00.000"},
+        # One second inside the window that Feb-28 produces...
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-02-28T00:00:01.000"},
+        # ...and one just outside it.
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-02-27T23:59:59.000"},
+    ]
+    matched, max_date = _join_311(by_addr, rows)
+    assert max_date == "2024-02-29T00:00:00.000"
+    assert matched == 2
+    assert parcels[0]["complaints_311_12mo"] == 2
+
+
+def test_311_non_leap_anchor_uses_the_same_calendar_day():
+    """The ordinary path: 2024-05-10 anchors a window opening 2023-05-10.
+    This is the real anchor — the 311 feed stopped updating in 2024-05."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "100", "LOC_STREET": "Main", "PRIMARY_OWNER": "X",
+         "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    rows = [
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2024-05-10T12:00:00.000"},
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-05-10T12:00:00.000"},   # exactly a year back: in
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-05-10T11:59:59.000"},   # a second earlier: out
+    ]
+    _join_311(by_addr, rows)
+    assert parcels[0]["complaints_311_12mo"] == 2
+    # Everything is kept for the dossier regardless of the window.
+    assert len(parcels[0]["complaints"]) == 3
+
+
+def test_311_march_1_anchor_does_not_take_the_leap_branch():
+    """Guards the branch condition itself: only Feb 29 may divert."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "100", "LOC_STREET": "Main", "PRIMARY_OWNER": "X",
+         "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    rows = [
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2024-03-01T00:00:00.000"},
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-03-01T00:00:00.000"},   # in
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": "2023-02-28T00:00:00.000"},   # out
+    ]
+    _join_311(by_addr, rows)
+    assert parcels[0]["complaints_311_12mo"] == 2
+
+
+# --- counts are taken before the trim (suspect cleared) -----------------
+
+
+def test_violation_counts_are_totals_not_the_kept_25():
+    """`code_violations_total` counts every matched row; the 25-row list is
+    only the dossier payload. join_all does the trim after this point."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "216", "LOC_STREET": "Landon", "PRIMARY_OWNER": "X",
+         "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    violations = [
+        {"address": "216 Landon", "status": "ACTIVE",
+         "date": f"2026-01-01T00:00:{s:02d}.000"} for s in range(40)
+    ]
+    _join_violations(by_addr, violations)
+    assert parcels[0]["code_violations_total"] == 40
+    assert parcels[0]["code_violations_open"] == 40
+
+
+def test_complaint_counts_are_totals_not_the_kept_25():
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "100", "LOC_STREET": "Main", "PRIMARY_OWNER": "X",
+         "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    rows = [
+        {"address_number": "100", "address_line_1": "Main",
+         "open_date": f"2024-05-10T00:00:{s:02d}.000"} for s in range(40)
+    ]
+    _join_311(by_addr, rows)
+    assert parcels[0]["complaints_311_12mo"] == 40
+
+
+# --- address-index collisions (suspect cleared) -------------------------
+
+
+def test_duplicate_address_resolution_is_order_independent():
+    """Two parcels reducing to one address key: the exact key always wins
+    over another parcel's no-street-type alias, whichever order they arrive
+    in, so a reshuffled parcel feed can't move violations between them."""
+    exact = {"LOC_ST_NBR": "216", "LOC_STREET": "Landon", "SBL": "EXACT",
+             "PRIMARY_OWNER": "A"}
+    typed = {"LOC_ST_NBR": "216", "LOC_STREET": "Landon St", "SBL": "TYPED",
+             "PRIMARY_OWNER": "B"}
+
+    _, forward = _build_parcel_records(_parcel_fc([exact, typed]))
+    _, reverse = _build_parcel_records(_parcel_fc([typed, exact]))
+    assert forward["216 LANDON"]["sbl"] == "EXACT"
+    assert reverse["216 LANDON"]["sbl"] == "EXACT"
+    assert forward["216 LANDON ST"]["sbl"] == "TYPED"
+    assert reverse["216 LANDON ST"]["sbl"] == "TYPED"
+
+
+def test_identical_addresses_resolve_to_the_last_parcel_deterministically():
+    """Genuine duplicates (condos share a street address) are last-write-wins
+    — arbitrary, but fixed for a given input file."""
+    a = {"LOC_ST_NBR": "1", "LOC_STREET": "Main", "SBL": "FIRST",
+         "PRIMARY_OWNER": "A"}
+    b = {"LOC_ST_NBR": "1", "LOC_STREET": "Main", "SBL": "SECOND",
+         "PRIMARY_OWNER": "B"}
+    _, by_addr = _build_parcel_records(_parcel_fc([a, b]))
+    assert by_addr["1 MAIN"]["sbl"] == "SECOND"
+
+
+# --- concern-score demolition gate, malformed input (suspect cleared) ---
+
+
+def test_concern_score_ignores_a_permit_with_no_date():
+    p = {"code_violations_open": 0, "complaints_311_12mo": 0,
+         "demolished": True, "demo_permit": {"date": "", "via": "sbl"}}
+    assert _compute_concern_score(p, today=date(2026, 8, 7)) == 0
+
+
+def test_concern_score_ignores_a_malformed_permit_date():
+    """The gate is a string comparison against an ISO cutoff, so garbage
+    sorts below it rather than throwing."""
+    p = {"code_violations_open": 1, "complaints_311_12mo": 0,
+         "demolished": True, "demo_permit": {"date": "not-a-date", "via": "sbl"}}
+    assert _compute_concern_score(p, today=date(2026, 8, 7)) == 2
+
+
+def test_concern_score_counts_a_future_dated_permit_as_recent():
+    """A permit dated ahead of today is a data error, not a stale record, so
+    it stays inside the recency window rather than being silently dropped.
+    The 2026-08-07 feed contains none (max issued 2026-07-13)."""
+    p = {"code_violations_open": 0, "complaints_311_12mo": 0,
+         "demolished": True, "demo_permit": {"date": "2030-01-01", "via": "sbl"}}
+    assert _compute_concern_score(p, today=date(2026, 8, 7)) == 5
+
+
+def test_join_demolitions_blanks_a_malformed_issued_date():
+    """A non-ISO `issued` would outrank every real date under the string
+    ordering used for 'latest permit wins' and for the recency gate."""
+    fc = _demo_parcel_fc(PROP_CLASS="311")
+    parcels, by_addr = _build_parcel_records(fc)
+    stats = _join_demolitions(parcels, by_addr, [
+        {"sbl": "1007300006008000", "issued": "2019-06-01T00:00:00.000",
+         "stname": "999 Demolish Rd"},
+        {"sbl": "1007300006008000", "issued": "garbage",
+         "stname": "999 Demolish Rd"},
+    ])
+    assert parcels[0]["demo_permit"]["date"] == "2019-06-01"
+    assert stats["max_issued"] == "2019-06-01"

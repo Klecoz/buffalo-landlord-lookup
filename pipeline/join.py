@@ -23,6 +23,7 @@ matching for orphans.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -37,6 +38,10 @@ from normalize import (
 
 
 _STREET_TYPE_TOKENS = set(_STREET_TYPE_CANON.values())
+
+# Source date fields are compared as strings throughout; this is the shape
+# that comparison is valid for.
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _strip_trailing_type(addr_norm: str) -> str:
@@ -406,6 +411,11 @@ def _join_demolitions(
 
     for d in demos:
         issued = (d.get("issued") or "")[:10]
+        # Everything downstream orders these as plain strings, so a value
+        # that isn't an ISO date would outrank every real one. Blank it here
+        # and the permit simply carries no date. (Today's feed has none.)
+        if not _ISO_DATE_RE.fullmatch(issued):
+            issued = ""
         if issued > max_issued:
             max_issued = issued
 
@@ -472,7 +482,10 @@ def _compute_concern_score(p: dict, today: date | None = None) -> int:
         except ValueError:  # today is Feb 29 and the target year isn't a leap year
             cutoff = today.replace(year=today.year - DEMO_SCORE_YEARS, day=28)
         issued = (p.get("demo_permit") or {}).get("date") or ""
-        if issued >= cutoff.isoformat():
+        # The gate is a string comparison, so a value that isn't an ISO date
+        # would sort above any cutoff ("not-a-date" > "2021-08-07") and score
+        # as recent. Check the shape before trusting the ordering.
+        if _ISO_DATE_RE.fullmatch(issued) and issued >= cutoff.isoformat():
             demo_points = 5
 
     return (

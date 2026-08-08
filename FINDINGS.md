@@ -292,3 +292,84 @@ applied at the next full run.
   (up to 241 on one), which are precisely the parcels behind the leaderboard
   entries the tally annotates, and it always drops the *oldest* rows. Now
   tallied in `_join_violations` as the rows go by, before the trim.
+- **An over-long owner name would have aborted the entire emit.** A slug is a
+  filename and every filesystem we target caps a name at 255 bytes; `_slugify`
+  applied no cap, so one long name would raise `ENAMETOOLONG` partway through
+  writing 65k owner portfolios, leaving `web/data/` half-written. Not
+  reachable from the current source — the assessment roll truncates owner
+  names at 30 characters, and the longest real slug is 46 — but the input is
+  third-party data and the failure is total, so slugs are now capped at 120
+  characters. Collisions the cap could introduce go through the same dedup as
+  every other collision.
+- **A malformed permit date would have scored as recent.** Both the
+  "latest permit wins" pick and the `DEMO_SCORE_YEARS` recency gate order
+  `issued` as a plain string, and any non-ISO value sorts above every real
+  date (`"not-a-date" > "2021-08-07"`), so it would have won the +5 concern
+  bonus. Today's feed is clean — all 10,822 permits parse as `YYYY-MM-DD`,
+  spanning 2000-01-03 to 2026-07-13 with none empty and none in the future —
+  so this was latent. Malformed values are now blanked at the join and the
+  gate checks the shape before trusting the comparison.
+
+### Suspects cleared
+
+- **THE SLUG ALPHABET IS SAFE.** `_slugify` emits strictly `[a-z0-9-]` for
+  *any* input, by construction: `re.sub(r"[^a-z0-9]+", "-", name.lower())`
+  replaces every character outside the class, the only other character it can
+  introduce is the hyphen, and the `or "unknown"` fallback rules out empty.
+  Verified against all 65,074 real `owner_norm` values (which produce owner
+  slugs) and all 67,455 raw `PRIMARY_OWNER` values (which produce operator
+  labels): zero characters outside the alphabet in either set. Also verified
+  against adversarial inputs — quote-and-script-tag injections, path
+  traversal, NUL and newline, Greek, Cyrillic, an RTL override, a dotted
+  capital I (whose `.lower()` yields a combining mark), and emoji.
+  **Item 6 may rely on this: a slug interpolated into an inline `onclick`
+  cannot carry a quote, angle bracket, backslash, or whitespace.** The
+  guarantee is now pinned by tests at both `_slugify` and `emit()` output.
+- **Slug collisions are possible but cannot silently overwrite.** Distinct
+  names really can collapse to one slug — accents are the cheapest case
+  (`josé` and `josë` both give `jos`), and 2,133 groups of raw owner names
+  collide, though almost all are punctuation variants of one entity
+  ("Klopman Ventures Inc." / "Klopman Ventures, Inc."). Both the owner path
+  (`emit()`) and the operator path (`_slugify_unique`) already resolve them
+  with a `-2`, `-3` suffix, and the loop re-checks each candidate so a suffix
+  can't steal a slug a real name would have earned. Across the 65,074 real
+  `owner_norm` values there are **zero** collisions, so no suffix is currently
+  in play. The assignment order follows the parcel feed's order, which is
+  stable for a given `parcels.geojson` but not pinned across refetches
+  (the ArcGIS query sends no `orderByFields`) — moot while collisions are zero.
+- **The 12-month 311 window is correct, including the leap-day branch.** The
+  window is anchored on the dataset's max `open_date` (frozen at 2024-05-10,
+  since the feed stopped updating) rather than today. `anchor.replace(year=...)`
+  raises only for a Feb-29 anchor, so the `day=28` fallback fires only then;
+  every other date takes the plain path and lands on the same calendar day a
+  year earlier. The boundary is inclusive.
+- **Per-parcel violation and complaint counts are taken before the trim to
+  25.** The counters increment inside the join loops; `join_all` trims the
+  dossier lists afterwards. Confirmed by test. (The type *tally* was the
+  exception — see the fix above.)
+- **Address-index collisions are deterministic and order-independent.** An
+  exact normalized address always beats another parcel's no-street-type
+  alias regardless of arrival order, because the alias is only written when
+  the key is free while the exact key overwrites. Genuinely identical
+  addresses (condos) are last-write-wins — arbitrary, but fixed for a given
+  input file.
+- **Socrata paging handles a row count that is an exact multiple of
+  PAGE_SIZE.** The extra request returns zero rows and terminates; no loop,
+  no lost tail. The 311 `$where` needs no escaping — neither `DPIS` nor
+  `Buffalo Municipal Housing Authority` contains an apostrophe, and `requests`
+  URL-encodes the clause. A literal containing one would need doubling.
+- **Atomic writes do protect the prior cache.** A failed write leaves the
+  previous file byte-for-byte intact and removes the `.tmp` sibling, so a
+  broken refetch can't strand a `--no-fetch` run.
+- **`_join_311`'s dead client-side filter.** `HOUSING_311_KEYWORDS` and
+  `_is_housing_311` are unreferenced — the subject filter moved server-side
+  into the `$where`. All 195,004 rows are DPIS (191,728) or BMHA (3,276).
+  Left in place; removing dead code is Item 10's call, not a correctness fix.
+- **`oldest_violation` is a misnomer, and unused.** It is the *minimum* of
+  each parcel's *latest* violation date across the owner's portfolio, which
+  is not "the owner's oldest violation". It is emitted in every owner file
+  and read by nothing in `web/`.
+- **Coordinate precision is not rounded anywhere.** `properties.geojson`
+  ships full float geometry straight from ArcGIS, which is most of its 65MB.
+  A correctness non-issue; flagged as payload weight for whoever owns the
+  emit-size question.

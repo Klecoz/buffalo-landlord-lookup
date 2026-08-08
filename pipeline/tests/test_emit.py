@@ -6,9 +6,13 @@ difference between a useful leaderboard and one full of "city of buffalo
 perfecting title".
 """
 
+import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -16,6 +20,8 @@ from emit import (
     TOP_VIOLATION_TYPES_N,
     _build_operator_clusters,
     _is_skipped_owner,
+    _slugify,
+    _slugify_unique,
     _top_violation_types,
 )
 
@@ -722,3 +728,167 @@ def test_registered_agent_address_leaves_a_cohesive_family_alone():
     cluster = next(iter(clusters.values()))
     assert cluster["confidence"] == "high"
     assert "registered-agent" not in cluster["evidence"]
+
+
+# --- slug alphabet and collision safety ---------------------------------
+#
+# The frontend interpolates owner and operator slugs straight into inline
+# onclick handlers, so the slug alphabet is the backstop that keeps a hostile
+# owner name in the assessment roll from becoming script. These tests pin the
+# guarantee at the producing end.
+
+SLUG_ALPHABET = re.compile(r"[a-z0-9-]+")
+
+_ADVERSARIAL_NAMES = [
+    "'); alert(1); //",
+    '"><script>alert(1)</script>',
+    "acme </a><img src=x onerror=alert(1)>",
+    "javascript:alert(1)",
+    "../../etc/passwd",
+    "..\\..\\windows\\system32",
+    "con",                          # reserved device name on Windows
+    "NUL.json",
+    "line\nbreak\ttab\r\x00nul",
+    "josé ramos",              # non-ASCII letters
+    "ΑΒΓ δεζ",       # Greek
+    "владимир",   # Cyrillic
+    "İstanbul llc",   # dotted capital I: lower() yields i + combining dot
+    "emoji \U0001f600 llc",
+    "‮evil",                   # right-to-left override
+    "a" * 500,
+    "   ",
+    "---",
+    "___",
+    "!!!",
+    "",
+]
+
+
+@pytest.mark.parametrize("name", _ADVERSARIAL_NAMES)
+def test_slugify_output_stays_in_the_alphabet(name):
+    """_slugify must emit only [a-z0-9-], for any input whatsoever."""
+    slug = _slugify(name)
+    assert SLUG_ALPHABET.fullmatch(slug), f"{name!r} -> {slug!r}"
+
+
+@pytest.mark.parametrize(
+    "name", ["", "   ", "!!!", "___", "\U0001f600", "ΑΒΓ"]
+)
+def test_slugify_never_returns_empty(name):
+    """An empty slug would name a file '.json' and link an owner to nowhere.
+    Punctuation-only, empty, and wholly non-Latin names fall back."""
+    assert _slugify(name) == "unknown"
+
+
+def test_slugify_caps_length_to_a_writable_filename():
+    """A slug becomes a filename, and every filesystem we target caps a name
+    at 255 bytes. Uncapped, one long owner name aborts the whole emit with
+    ENAMETOOLONG partway through writing the owner portfolios."""
+    slug = _slugify("a" * 500)
+    assert len(slug) + len(".json.tmp") <= 255
+
+
+def test_slugify_no_leading_or_trailing_hyphen():
+    """A stray hyphen would survive into the filename and the URL."""
+    for name in ("  acme llc  ", "!acme llc!", "---acme---llc---"):
+        slug = _slugify(name)
+        assert not slug.startswith("-") and not slug.endswith("-"), slug
+
+
+def test_slugify_can_collide_which_is_why_dedup_exists():
+    """Distinct owner names really do reduce to the same slug — an accent is
+    the cheapest demonstration. Nothing downstream may assume otherwise."""
+    assert _slugify("josé") == _slugify("josë") == "jos"
+
+
+def test_slugify_unique_separates_colliding_labels():
+    used = set()
+    assert _slugify_unique("josé", used) == "jos"
+    assert _slugify_unique("josë", used) == "jos-2"
+    assert _slugify_unique("josü", used) == "jos-3"
+
+
+def test_slugify_unique_suffix_cannot_steal_a_real_slug():
+    """A name that legitimately slugifies to 'jos-2' must not be handed the
+    same file as the disambiguated 'josë'."""
+    used = set()
+    assert _slugify_unique("jos 2", used) == "jos-2"
+    assert _slugify_unique("josé", used) == "jos"
+    assert _slugify_unique("josë", used) == "jos-3"
+    assert len(used) == 3
+
+
+def _emit_parcel(pid, owner_raw, owner_norm):
+    return {
+        "parcel_id": pid, "address": f"{pid} Main St", "owner_raw": owner_raw,
+        "owner_norm": owner_norm, "lat": 42.9, "lng": -78.8,
+        "geometry": {"type": "Point", "coordinates": [-78.8, 42.9]},
+        "code_violations_open": 1, "code_violations_total": 1,
+        "complaints_311_12mo": 0, "demolished": False, "demo_permit": None,
+        "concern_score": 2, "last_violation_date": "2026-01-01",
+        "violations": [], "complaints": [], "full_market_val": 1000,
+        "add_owner": "", "is_self_mail": True, "violation_type_counts": Counter(),
+    }
+
+
+def test_emit_gives_every_colliding_owner_its_own_file(tmp_path, monkeypatch):
+    """End to end: owners whose names collapse to one slug must land in
+    separate files rather than silently overwriting each other."""
+    import emit as emit_mod
+
+    monkeypatch.setattr(emit_mod, "WEB_DATA", tmp_path)
+    monkeypatch.setattr(emit_mod, "OWNERS_DIR", tmp_path / "owners")
+    monkeypatch.setattr(emit_mod, "OPERATORS_DIR", tmp_path / "operators")
+
+    parcels = [
+        _emit_parcel("1", "José", "josé"),
+        _emit_parcel("2", "Josë", "josë"),
+        _emit_parcel("3", "Josü", "josü"),
+    ]
+    joined = {
+        "parcels": parcels,
+        "owners": {p["owner_norm"]: [p["parcel_id"]] for p in parcels},
+        "meta": {},
+    }
+    emit_mod.emit(joined)
+
+    files = sorted(f.name for f in (tmp_path / "owners").glob("*.json"))
+    assert files == ["jos-2.json", "jos-3.json", "jos.json"]
+    # Each owner's file is the one the map layer points at.
+    geo = json.loads((tmp_path / "properties.geojson").read_text())
+    by_id = {f["properties"]["id"]: f["properties"] for f in geo["features"]}
+    assert len({p["owner_slug"] for p in by_id.values()}) == 3
+    for pid, props in by_id.items():
+        owner_file = json.loads(
+            (tmp_path / "owners" / f"{props['owner_slug']}.json").read_text()
+        )
+        assert [p["id"] for p in owner_file["properties"]] == [pid]
+
+
+def test_emit_slugs_are_all_in_the_alphabet(tmp_path, monkeypatch):
+    """The property the frontend's inline handlers rely on, asserted on
+    emit's actual output rather than on _slugify in isolation."""
+    import emit as emit_mod
+
+    monkeypatch.setattr(emit_mod, "WEB_DATA", tmp_path)
+    monkeypatch.setattr(emit_mod, "OWNERS_DIR", tmp_path / "owners")
+    monkeypatch.setattr(emit_mod, "OPERATORS_DIR", tmp_path / "operators")
+
+    parcels = [
+        _emit_parcel(str(i), name, name.lower())
+        for i, name in enumerate(_ADVERSARIAL_NAMES)
+        if name.strip()
+    ]
+    joined = {
+        "parcels": parcels,
+        "owners": {p["owner_norm"]: [p["parcel_id"]] for p in parcels},
+        "meta": {},
+    }
+    emit_mod.emit(joined)
+
+    geo = json.loads((tmp_path / "properties.geojson").read_text())
+    for f in geo["features"]:
+        slug = f["properties"]["owner_slug"]
+        assert SLUG_ALPHABET.fullmatch(slug), slug
+    for f in (tmp_path / "owners").glob("*.json"):
+        assert SLUG_ALPHABET.fullmatch(f.stem), f.name

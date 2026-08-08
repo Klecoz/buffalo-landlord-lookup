@@ -44,10 +44,24 @@ MIN_CLUSTER_OWNERS = 2           # need at least N distinct LLCs to be a cluster
 MIN_CLUSTER_PARCELS = 3          # and at least N total parcels across them
 
 
+# A slug becomes a filename, and filesystems cap a name at 255 bytes. The
+# assessment roll truncates owner names at 30 characters so nothing near this
+# occurs today, but an over-long name would otherwise abort the entire emit
+# with ENAMETOOLONG. Collisions the cap introduces are resolved by the same
+# dedup that handles every other collision.
+SLUG_MAX_LEN = 120
+
+
 def _slugify(name: str) -> str:
-    """Normalized owner string -> filesystem-safe slug."""
+    """Normalized owner string -> filesystem-safe slug.
+
+    Output is always non-empty and strictly within [a-z0-9-] — by
+    construction, for any input, since every other character is replaced.
+    The frontend relies on this: slugs are interpolated into inline event
+    handlers, where the alphabet is what makes them inert.
+    """
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return s or "unknown"
+    return s[:SLUG_MAX_LEN].strip("-") or "unknown"
 
 
 TOP_VIOLATION_TYPES_N = 5

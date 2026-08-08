@@ -305,3 +305,90 @@ def test_arcgis_short_page_advances_by_rows_returned(monkeypatch):
 
     assert offsets == [0, 3], "second page must resume where the first ended"
     assert [f["i"] for f in fc["features"]] == [0, 1, 2, 3]
+
+
+def test_socrata_row_count_an_exact_multiple_of_page_size(monkeypatch):
+    """The boundary that could loop forever or lose the tail: a dataset whose
+    size divides evenly by PAGE_SIZE. The extra request returns zero rows and
+    terminates — no repeat, no drop."""
+    monkeypatch.setattr(fetch_mod, "PAGE_SIZE", 100)
+    expected = [{"i": i} for i in range(200)]
+    offsets = []
+
+    def fake_get(url, params=None, timeout=None):
+        offsets.append(params["$offset"])
+        off = params["$offset"]
+        return _FakeResponse(expected[off:off + params["$limit"]])
+
+    monkeypatch.setattr(fetch_mod.requests, "get", fake_get)
+    rows = fetch_mod._socrata("dataset-id")
+    assert offsets == [0, 100, 200]
+    assert rows == expected
+
+
+def test_socrata_empty_dataset_makes_one_request(monkeypatch):
+    calls = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(params["$offset"])
+        return _FakeResponse([])
+
+    monkeypatch.setattr(fetch_mod.requests, "get", fake_get)
+    assert fetch_mod._socrata("dataset-id") == []
+    assert calls == [0]
+
+
+def test_socrata_where_clause_quoting_is_preserved_verbatim(monkeypatch):
+    """The 311 filter is a SoQL `in()` list of single-quoted literals. requests
+    URL-encodes the value; it must not be mangled or re-quoted before that."""
+    captured = {}
+
+    def fake_get(url, params=None, timeout=None):
+        captured.update(params)
+        return _FakeResponse([])
+
+    monkeypatch.setattr(fetch_mod.requests, "get", fake_get)
+    monkeypatch.setattr(fetch_mod, "RAW", Path("/dev/null").parent)
+    where = "subject in('DPIS','Buffalo Municipal Housing Authority')"
+    fetch_mod._socrata("whkc-e5vr", where=where)
+    assert captured["$where"] == where
+    # No embedded apostrophes in either literal, so no escaping is required
+    # and none is applied — a name containing one would need doubling.
+    assert where.count("'") == 4
+
+
+def test_arcgis_pagination_survives_a_final_exact_page(monkeypatch):
+    """A last page exactly ARC_PAGE long with no exceeded flag: one more
+    request confirms the end rather than assuming it."""
+    arc_page = fetch_mod.ARC_PAGE
+    pages = [
+        {"features": [{"i": i} for i in range(arc_page)]},
+        {"features": []},
+    ]
+    offsets = []
+
+    def fake_get(url, params=None, timeout=None):
+        offsets.append(params["resultOffset"])
+        return _FakeResponse(pages.pop(0))
+
+    monkeypatch.setattr(fetch_mod.requests, "get", fake_get)
+    monkeypatch.setattr(fetch_mod.time, "sleep", lambda *_: None)
+    fc = fetch_mod._arcgis_geojson("http://x", "1=1")
+    assert offsets == [0, arc_page]
+    assert len(fc["features"]) == arc_page
+
+
+def test_atomic_write_leaves_prior_cache_intact_on_failure(tmp_path):
+    """The point of the tmp+rename dance: a failed refetch must not destroy
+    the cache a --no-fetch run depends on."""
+    out = tmp_path / "code_violations.json"
+    fetch_mod._atomic_write_json(out, [{"good": 1}])
+
+    class Unserializable:
+        pass
+
+    with pytest.raises(TypeError):
+        fetch_mod._atomic_write_json(out, [Unserializable()])
+
+    assert json.loads(out.read_text()) == [{"good": 1}]
+    assert not (tmp_path / "code_violations.json.tmp").exists()
