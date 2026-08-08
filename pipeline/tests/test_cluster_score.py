@@ -482,3 +482,30 @@ def test_person_signature_keeps_two_token_names_intact():
     ])
     # "Li X" has a one-character token as its surname and stays unkeyable.
     assert len(groups) == 2
+
+
+# --- PO-box auto-trust needs an actual business --------------------------
+
+def test_classify_po_box_of_only_persons_is_not_auto_high():
+    """Real false merge: three unrelated people at PO BOX 90417, Rochester,
+    published as one high-confidence operator (al-wuhaib-najat-bader-e-h).
+
+    A high-numbered out-of-area box holding only natural persons with no
+    shared surname is a mail drop or an escrow servicer's lockbox, not a
+    landlord. The cluster is still kept — they do share an address — but at
+    medium, and the evidence no longer claims they are LLCs.
+    """
+    owners = ["Al-Wuhaib, Najat Bader E H", "Alhadah, Abdulrahman M A A S",
+              "Allen Corrie Lee"]
+    result = classify_cluster(owners, "po_box")
+    assert result["action"] == "keep"
+    assert result["confidence"] == "medium"
+    assert "PO box" not in result["evidence"]
+
+
+def test_classify_po_box_with_one_business_still_auto_high():
+    """A person plus their LLCs at a small box is the normal, trusted shape."""
+    owners = ["Brown Adrien W", "Days Park Properties LLC", "20 Wadsworth LLC"]
+    result = classify_cluster(owners, "po_box")
+    assert result["confidence"] == "high"
+    assert result["evidence"] == "3 LLCs sharing one PO box"

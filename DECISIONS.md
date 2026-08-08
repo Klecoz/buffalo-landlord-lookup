@@ -2,6 +2,20 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-07 — PO-box auto-trust requires at least one business entity
+
+The "<= 8 owners sharing one PO box → high confidence" rule now also requires
+one member to look like a business. It is the rule's own evidence string ("N
+LLCs sharing one PO box") made true, and it demotes exactly the two clusters
+in the emitted set that had no business in them at all — both consistent with
+a mail drop or an escrow servicer's lockbox rather than a landlord. They stay
+published, at medium.
+
+Rejected: lowering the size cap from 8 (the bad cases have 3 and 5 members, so
+it would not reach them and would demote good clusters); treating out-of-state
+PO boxes as suspect (PO BOX 52427 Atlanta is a genuine corporate family — the
+Laidlaw bus companies).
+
 ## 2026-08-07 — Trailing middle initials are dropped from person keys
 
 `_person_signature` pops one-character trailing tokens (never below two

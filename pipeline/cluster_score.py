@@ -141,7 +141,12 @@ def classify_cluster(owner_names: list[str], address_kind: str) -> dict:
     if is_po and score >= 0.5:
         return {"action": "keep", "confidence": "high",
                 "evidence": evidence, "pattern": None}
-    if is_po and n <= 8:
+    # A small PO box is trustworthy because businesses don't share one
+    # casually. A box holding nothing but natural persons is a different
+    # animal — a mail drop or an escrow/tax servicer's lockbox, which pools
+    # unrelated homeowners — so require at least one actual business entity
+    # before making the claim this evidence string makes.
+    if is_po and n <= 8 and any(_is_llc_like(name) for name in owner_names):
         return {
             "action": "keep", "confidence": "high",
             "evidence": f"{n} LLC{'s' if n != 1 else ''} sharing one PO box",

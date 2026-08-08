@@ -114,6 +114,17 @@ cluster the NYS DOS join flagged as a registered-agent address).
   displays were affected; dropping trailing initials merges person variants in
   133 clusters and splits none.
 
+- **The PO-box auto-trust branch trusted boxes with no business in them.**
+  18 clusters reach the "n <= 8 owners sharing one PO box → high" rule. Two of
+  them contain no business entity at all: PO BOX 90417 Rochester
+  (`al-wuhaib-najat-bader-e-h`, three unrelated surnames) and PO BOX 1054
+  Williamsville (`ulman-efraim`, five). Both look like a mail drop or an
+  escrow/tax-servicer lockbox pooling unrelated homeowners, and both were
+  published at high confidence under an evidence string that literally called
+  them LLCs. Note that a mortgage escrow address reaches the clustering layer
+  precisely because it differs from the property address, so the
+  non-self-mail filter does not catch it.
+
 ### Known limitations, measured but deliberately not fixed
 
 - **A two-owner cluster can never score below 0.5.** The cohesion formula is
