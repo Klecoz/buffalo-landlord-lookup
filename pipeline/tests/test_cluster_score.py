@@ -111,6 +111,27 @@ def test_cohesion_details_empty():
     assert d["owner_count"] == 0
 
 
+def test_cohesion_details_tie_broken_alphabetically():
+    """Tied tokens must not depend on set-iteration order.
+
+    "Zoll, Sean" / "Zoll Sean P" give zoll and sean the same owner count and
+    the same length, so only the tie-break separates them. It used to fall
+    through to Counter insertion order — seeded by a per-process string hash —
+    and the emitted evidence string changed between otherwise identical runs.
+    """
+    from cluster_score import cohesion_details
+    d = cohesion_details(["Zoll, Sean", "Zoll Sean P"])
+    assert d["distinctive_token"] == "sean"
+    assert d["explanation"] == "2 of 2 owners share 'sean'"
+
+
+def test_cohesion_details_tie_break_independent_of_input_order():
+    from cluster_score import cohesion_details
+    forward = cohesion_details(["Zoll, Sean", "Zoll Sean P"])
+    reverse = cohesion_details(["Zoll Sean P", "Zoll, Sean"])
+    assert forward["distinctive_token"] == reverse["distinctive_token"]
+
+
 # --- classify_cluster ----------------------------------------------------
 
 def test_classify_real_operator_po_box_high():

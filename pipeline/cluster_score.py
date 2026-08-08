@@ -83,8 +83,13 @@ def cohesion_details(owner_names: list[str]) -> dict:
         return {"score": 0.0, "distinctive_token": None,
                 "explanation": "no distinctive tokens", "owner_count": n}
 
+    # Sort by token before taking the max: `max` returns the first maximal
+    # item, and Counter iterates in insertion order, which comes from the
+    # `set(...)` above — a per-process hash order. Without this, a cluster
+    # whose top tokens tie (e.g. "Zoll, Sean" -> zoll/sean) picks a different
+    # winner on every run, and the evidence string it prints flaps with it.
     token, count = max(
-        token_owner_counts.items(),
+        sorted(token_owner_counts.items()),
         key=lambda kv: (kv[1], len(kv[0])),
     )
     return {
