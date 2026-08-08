@@ -31,18 +31,25 @@ _OWNER_SUFFIX_CANON: list[tuple[re.Pattern[str], str]] = [
 _PUNCT_RE = re.compile(r"[^\w\s]")
 _WS_RE = re.compile(r"\s+")
 
+# "&" and "+" are punctuation and vanish above; the spelled-out "and" has to
+# be dropped too or the two spellings of one owner never meet. See
+# DECISIONS.md 2026-08-07.
+_AND_RE = re.compile(r"\band\b")
+
 
 def normalize_owner(raw: Optional[str]) -> str:
     """Return a stable, lowercase key for matching owner records.
 
     "ACME PROPERTIES, L.L.C." and "Acme Properties LLC" both become
-    "acme properties llc". Heuristic — does not attempt to merge persons
-    with/without middle initials. That limitation is documented in the UI.
+    "acme properties llc"; so do "Karim & Karim LLC" and "Karim and Karim
+    LLC". Heuristic — does not attempt to merge persons with/without middle
+    initials. That limitation is documented in the UI.
     """
     if not raw:
         return ""
     s = raw.lower()
     s = _PUNCT_RE.sub(" ", s)
+    s = _AND_RE.sub(" ", s)
     s = _WS_RE.sub(" ", s).strip()
     for pattern, canon in _OWNER_SUFFIX_CANON:
         s = pattern.sub(canon, s)

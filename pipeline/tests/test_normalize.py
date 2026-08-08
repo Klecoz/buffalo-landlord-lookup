@@ -228,3 +228,32 @@ def test_normalize_owner_keeps_diacritics_distinct():
 def test_normalize_owner_idempotent_on_adversarial_input(raw):
     once = normalize_owner(raw)
     assert normalize_owner(once) == once
+
+
+# --- "&" vs "and" --------------------------------------------------------
+
+@pytest.mark.parametrize("amp,spelled", [
+    # Real pairs from the roll that were two separate owners before this
+    # normalization; see FINDINGS.md 2026-08-07.
+    ("Karim & Karim LLC", "Karim and Karim LLC"),
+    ("Manski & Manny LLC", "Manski And Manny, LLC"),
+    ("Howlader & Roson Inc", "Howlader and Roson Inc"),
+    ("Zenner & Ritter Inc", "Zenner and Ritter Inc"),
+    ("M & M of Buffalo Inc", "M and M Of Buffalo, Inc."),
+    ("Buffalo & Fort Erie", "Buffalo And Fort Erie"),
+    ("R+SD, LLC", "R and SD LLC"),
+])
+def test_normalize_owner_merges_ampersand_and_spelled_out_and(amp, spelled):
+    assert normalize_owner(amp) == normalize_owner(spelled)
+
+
+def test_normalize_owner_and_removal_is_token_bounded():
+    """Only the standalone conjunction goes — not "and" inside a word."""
+    assert normalize_owner("Landmark Holdings") == "landmark holdings"
+    assert normalize_owner("Anderson Sand & Gravel") == "anderson sand gravel"
+    assert normalize_owner("Rand Realty") == "rand realty"
+
+
+def test_normalize_owner_and_removal_idempotent():
+    once = normalize_owner("Karim and Karim LLC")
+    assert normalize_owner(once) == once

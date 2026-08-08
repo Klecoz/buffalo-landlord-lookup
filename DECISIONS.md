@@ -2,6 +2,18 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-07 — Drop the conjunction "and" from owner keys
+
+`normalize_owner` deletes the standalone token "and", matching what
+punctuation stripping already does to "&" and "+". Measured across all 65,089
+owner records: 17 groups merge, every one of them a genuine `&`/"and" spelling
+pair of the same owner ("Karim & Karim LLC" / "Karim and Karim LLC",
+"Zenner & Ritter Inc" / "Zenner and Ritter Inc"), 34 owners and 69 parcels in
+total, with zero collateral merges of unrelated names. Rejected: canonicalizing
+"&" → "and" instead (same merges, but every existing key changes and the "+"
+spelling still misses); leaving the gap open (it is a pure false split, and
+"and" was already a cohesion stopword, so the two layers disagreed).
+
 ## 2026-08-07 — Demolished = permit + currently-vacant parcel
 
 Redefine `demolished` as: a demolition permit matches the parcel (SBL-first,

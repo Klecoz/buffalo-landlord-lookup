@@ -84,6 +84,15 @@ cluster the NYS DOS join flagged as a registered-agent address).
   across 42 clusters. Lowering the threshold would suppress genuine
   two-operator human links and still miss these, so the threshold stays.
 
+### Confirmed defects, fixed
+
+- **`&` and "and" never met.** Punctuation stripping deletes "&" and "+" but
+  keeps the spelled-out "and", so "Karim & Karim LLC" and "Karim and Karim
+  LLC" were two owners. 17 real pairs in the roll, 34 owners, 69 parcels —
+  and, checked exhaustively, no unrelated names collide when "and" is dropped.
+  The cohesion scorer already treated "and" as a stopword, so the two layers
+  disagreed about whether the word carried identity.
+
 ### Known limitations, measured but deliberately not fixed
 
 - **A two-owner cluster can never score below 0.5.** The cohesion formula is
