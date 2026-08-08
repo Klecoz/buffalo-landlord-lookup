@@ -18,6 +18,11 @@ cd ../web && python -m http.server 8000
 # open http://localhost:8000
 ```
 
+If `web/config.js` exists it sets `DATA_BASE` to the deployed R2 bucket, so a
+local server reads **production** data with your local HTML and JS. Move it
+aside to exercise the freshly built `web/data/`. Browsers cache it aggressively;
+serve on a new port after moving it.
+
 ## Data sources
 
 All public:
