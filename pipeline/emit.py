@@ -510,7 +510,7 @@ def emit(
                 )
                 if mk:
                     mail_keys[mk] += 1
-            props.append({
+            prop_row = {
                 "id": parcel["parcel_id"],
                 "addr": parcel["address"],
                 "lat": parcel["lat"],
@@ -521,7 +521,12 @@ def emit(
                 "demolished": parcel["demolished"],
                 "concern_score": parcel["concern_score"],
                 "value": parcel.get("full_market_val", 0) or 0,
-            })
+            }
+            # Only the ~10k parcels with a permit carry this key — a null on
+            # every row would be pure payload weight.
+            if parcel.get("demo_permit"):
+                prop_row["demo_permit"] = parcel["demo_permit"]
+            props.append(prop_row)
             parsed = parse_co_owner(parcel.get("add_owner") or "")
             if parsed is not None:
                 co_owner_counts[parsed["key"]] += 1
@@ -600,23 +605,28 @@ def emit(
             continue
         slug = owner_slugs.get(p["owner_norm"], "")
         portfolio_size = len(owners.get(p["owner_norm"], []))
+        feature_props = {
+            "id": p["parcel_id"],
+            "addr": p["address"],
+            "owner": p["owner_raw"],
+            "owner_slug": slug,
+            "operator_slug": owner_to_operator.get(p["owner_norm"]),
+            "portfolio_n": portfolio_size,
+            "violations_open": p["code_violations_open"],
+            "violations_total": p["code_violations_total"],
+            "complaints_311_12mo": p["complaints_311_12mo"],
+            "demolished": p["demolished"],
+            "concern_score": p["concern_score"],
+            "last_violation": p["last_violation_date"],
+        }
+        # Present on ~10k of 93k features; omitted elsewhere to keep the
+        # geojson from carrying 83k nulls.
+        if p.get("demo_permit"):
+            feature_props["demo_permit"] = p["demo_permit"]
         features.append({
             "type": "Feature",
             "geometry": p["geometry"],
-            "properties": {
-                "id": p["parcel_id"],
-                "addr": p["address"],
-                "owner": p["owner_raw"],
-                "owner_slug": slug,
-                "operator_slug": owner_to_operator.get(p["owner_norm"]),
-                "portfolio_n": portfolio_size,
-                "violations_open": p["code_violations_open"],
-                "violations_total": p["code_violations_total"],
-                "complaints_311_12mo": p["complaints_311_12mo"],
-                "demolished": p["demolished"],
-                "concern_score": p["concern_score"],
-                "last_violation": p["last_violation_date"],
-            },
+            "properties": feature_props,
         })
     _atomic_write(WEB_DATA / "properties.geojson", {
         "type": "FeatureCollection",

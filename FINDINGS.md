@@ -42,6 +42,45 @@ dead ends. Not a changelog; see git history for that.
   {high 1330, medium 855, low 19, dropped 4} · violations matched 220,068 ·
   demolitions matched 8,342.
 
+## 2026-08-07 — Demolished redesign, measured (Item 3)
+
+Numbers below are from the 2026-08-07 raw pull (93,440 parcel features →
+93,069 addressable parcels, 10,822 demolition permits), so they replace the
+May-dataset figures in the planning audit above.
+
+- **The flagged count falls from 8,128 to 6,720.** 8,128 is what the old
+  address-only rule produces on today's data (8,342 was the May pull). The new
+  rule matches more permits — 8,979 of 10,822, up from address-only — but only
+  6,720 parcels survive the vacancy check.
+- **SBL carries the join; address is a thin fallback.** 8,560 permits matched
+  by padded SBL, 419 by address, 1,843 matched nothing. Where a permit's SBL
+  and its address both resolved, they disagreed on only **6** permits — so the
+  old address matching was substantially right about *which* parcel, and wrong
+  about *what a permit means*.
+- **2,020 parcels hold a demolition permit and still assess as improved
+  buildings.** These are the false positives the old flag was publishing. 77 of
+  them have 2025-or-later permits, which is expected: the permit was pulled and
+  the building is genuinely still standing (or was, as of the roll).
+- **The vacancy corroboration lags the permit by about a year.** No parcel
+  reaches `demolished` on a 2025 or 2026 permit — the assessment roll is roll
+  year 2025 and hasn't caught up. The demolished-parcel permit histogram runs
+  ...2022: 55, 2023: 53, 2024: 49, then stops. So the freshest demolitions
+  render as "permit issued, building present" until the next roll. This is the
+  honest reading of the data we have, not a bug, but it means the display is
+  structurally a year behind reality.
+- **The concern-score contribution nearly vanishes: 172 parcels, down from
+  8,128.** 395 parcels have a permit inside the 5-year window; only 172 of those
+  also read vacant (the roll lag above). The other 6,548 demolished parcels
+  still colour the map dark red but contribute 0 to the score. The +5 term is
+  now a rare signal rather than a background hum across 9% of the city.
+- **The permit feed is fresher than the May pull suggested.** Max issued date is
+  2026-07-13 (the May pull had only 2 permits dated 2026); 77 permits are dated
+  2025 or later.
+- **361 parcels have no assessment at all** (`LAND_AV` and `TOTAL_AV` both 0),
+  exactly the set whose `PROP_CLASS` is also empty. They are excluded from the
+  value-based vacancy test on purpose — a blank roll record is silence, not
+  evidence of an empty lot.
+
 ## 2026-08-07 — LLC matching audit (Item 2)
 
 Audited against the emitted 2026-05-10 dataset: all 65,089 owner records and

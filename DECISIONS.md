@@ -83,14 +83,35 @@ total, with zero collateral merges of unrelated names. Rejected: canonicalizing
 spelling still misses); leaving the gap open (it is a pure false split, and
 "and" was already a cohesion stopword, so the two layers disagreed).
 
-## 2026-08-07 — Demolished = permit + currently-vacant parcel
+## 2026-08-07 — Demolished = permit + currently-vacant parcel (implemented)
 
-Redefine `demolished` as: a demolition permit matches the parcel (SBL-first,
-address fallback) AND the 2025 assessment roll reads vacant (`PROP_CLASS` 3xx
-or `TOTAL_AV <= LAND_AV`). Concern-score bump only when the permit is <5 years
-old. Rejected: keeping the permit-only flag (9% of the city flagged, mostly
-decades-old); pulling a new "completed demolitions" dataset (none is published);
-inferring completion from permit fees/inspections (fragile, complex).
+`demolished` is now: a demolition permit matches the parcel (permit SBL
+right-padded to 20 chars first, normalized address as fallback) AND the 2025
+assessment roll reads vacant (`PROP_CLASS` 3xx, or `TOTAL_AV <= LAND_AV` with
+both figures positive). The parcel keeps the latest matching permit as
+`demo_permit = {date, via}` regardless of the vacancy answer, so the UI can
+distinguish "permit issued, lot now vacant" from "permit issued, building
+present". Concern score adds +5 only when the permit is inside a hardcoded
+5-year window; older confirmed demolitions stay `demolished` for the map and
+the dossier but stop driving the score.
+
+On the 2026-08-07 pull this drops the flag from 8,128 parcels to 6,720, and
+drops the score-affected set from 8,128 to 172 (see FINDINGS.md for the full
+measurement, including the roll-lag reason the 172 is so small).
+
+Both figures must be positive for the value test: 361 parcels have `LAND_AV`
+and `TOTAL_AV` both 0, which is a roll record with no assessment rather than
+evidence of a cleared lot, so those only count as vacant if `PROP_CLASS` says
+so. Permit `sbl` values shorter than 16 characters (a few dozen 4-6 char
+strings) are treated as junk and fall through to the address, rather than
+matched on a prefix.
+
+Rejected: keeping the permit-only flag (9% of the city flagged, mostly
+decades-old); pulling a new "completed demolitions" dataset (none is
+published); inferring completion from permit fees/inspections (fragile,
+complex); anchoring the 5-year window to the feed's max date the way the 311
+window is anchored (a stale feed would then keep old permits "recent" forever —
+the opposite of what a concern signal should do).
 
 ## 2026-08-07 — Single atomic deploy at the end of the effort
 

@@ -1,6 +1,7 @@
 """Tests for join.py — the parcel-spine assembly and join logic."""
 
 import sys
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -131,23 +132,166 @@ def test_join_311_window_includes_boundary_day():
     assert by_addr["100 MAIN"]["complaints_311_12mo"] == 2
 
 
-def test_join_demolitions_flags_parcel():
+def _demo_parcel_fc(**overrides):
+    """One vacant-lot parcel at 999 DEMOLISH RD, SBL padded like the real feed."""
+    row = {
+        "LOC_ST_NBR": "999", "LOC_STREET": "Demolish Rd", "PRIMARY_OWNER": "X",
+        "SBL": "10073000060080000000", "PROP_CLASS": "311",
+        "LAND_AV": 5000, "TOTAL_AV": 5000,
+    }
+    row.update(overrides)
+    return _parcel_fc([row])
+
+
+def test_join_demolitions_matches_by_padded_sbl():
+    """Permit SBLs are 16 chars; parcel SBLs carry a 4-digit sub-parcel
+    suffix. The permit key is right-padded with zeros to line them up."""
+    parcels, by_addr = _build_parcel_records(_demo_parcel_fc())
+    demos = [{
+        "stname": "SOME OTHER ADDRESS", "apno": "BLD-1",
+        "sbl": "1007300006008000", "issued": "2024-03-04T00:00:00.000",
+    }]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    assert stats["matched_sbl"] == 1
+    assert stats["matched_address"] == 0
+    p = by_addr["999 DEMOLISH RD"]
+    assert p["demolished"] is True
+    assert p["demo_permit"] == {"date": "2024-03-04", "via": "sbl"}
+
+
+def test_join_demolitions_falls_back_to_address_without_sbl():
+    parcels, by_addr = _build_parcel_records(_demo_parcel_fc())
+    demos = [{"stname": "999 Demolish Rd", "apno": "BLD-1", "issued": "2024-03-04T00:00:00.000"}]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    assert stats["matched_sbl"] == 0
+    assert stats["matched_address"] == 1
+    assert by_addr["999 DEMOLISH RD"]["demo_permit"]["via"] == "address"
+
+
+def test_join_demolitions_ignores_junk_short_sbl():
+    """A handful of permits carry 4-6 char values in `sbl`. Those are not
+    SBLs — fall through to the address rather than matching on a prefix."""
+    parcels, by_addr = _build_parcel_records(_demo_parcel_fc())
+    demos = [{"stname": "999 Demolish Rd", "sbl": "10073", "issued": "2024-03-04T00:00:00.000"}]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    assert stats["matched_address"] == 1
+    assert by_addr["999 DEMOLISH RD"]["demo_permit"]["via"] == "address"
+
+
+def test_join_demolitions_counts_sbl_address_disagreement():
+    """When a permit's SBL and its address point at different parcels, the
+    SBL wins and the disagreement is counted for the console summary."""
     fc = _parcel_fc([
-        {"LOC_ST_NBR": "999", "LOC_STREET": "Demolish Rd", "PRIMARY_OWNER": "X", "SBL": "AAA"},
+        {"LOC_ST_NBR": "999", "LOC_STREET": "Demolish Rd", "PRIMARY_OWNER": "X",
+         "SBL": "10073000060080000000", "PROP_CLASS": "311"},
+        {"LOC_ST_NBR": "111", "LOC_STREET": "Other St", "PRIMARY_OWNER": "Y",
+         "SBL": "99999000060080000000", "PROP_CLASS": "311"},
     ])
     parcels, by_addr = _build_parcel_records(fc)
-    demos = [{"stname": "999 Demolish Rd", "apno": "BLD-1"}]
-    matched = _join_demolitions(by_addr, demos)
-    assert matched == 1
+    demos = [{
+        "stname": "111 Other St", "sbl": "1007300006008000",
+        "issued": "2024-03-04T00:00:00.000",
+    }]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    assert stats["sbl_address_disagreements"] == 1
     assert by_addr["999 DEMOLISH RD"]["demolished"] is True
+    assert by_addr["111 OTHER ST"]["demolished"] is False
+
+
+def test_join_demolitions_latest_permit_wins():
+    parcels, by_addr = _build_parcel_records(_demo_parcel_fc())
+    demos = [
+        {"stname": "999 Demolish Rd", "issued": "2011-06-01T00:00:00.000"},
+        {"stname": "999 Demolish Rd", "issued": "2023-09-15T00:00:00.000"},
+        {"stname": "999 Demolish Rd", "issued": "2004-01-20T00:00:00.000"},
+    ]
+    _join_demolitions(parcels, by_addr, demos)
+    assert by_addr["999 DEMOLISH RD"]["demo_permit"]["date"] == "2023-09-15"
+
+
+def test_join_demolitions_requires_vacancy():
+    """A permit on a parcel that still assesses as an improved building is
+    recorded, but does not make the parcel demolished — permits get pulled,
+    abandoned, and superseded by rebuilds."""
+    fc = _demo_parcel_fc(PROP_CLASS="210", LAND_AV=8000, TOTAL_AV=95000)
+    parcels, by_addr = _build_parcel_records(fc)
+    demos = [{"stname": "999 Demolish Rd", "issued": "2024-03-04T00:00:00.000"}]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    assert stats["demolished_parcels"] == 0
+    assert stats["permit_but_not_vacant"] == 1
+    p = by_addr["999 DEMOLISH RD"]
+    assert p["demolished"] is False
+    assert p["demo_permit"]["date"] == "2024-03-04"
+
+
+def test_join_demolitions_vacancy_via_assessment_only():
+    """PROP_CLASS still says dwelling but the improvement carries no value —
+    total assessed has fallen to the land-only figure. That's a cleared lot
+    the class code hasn't caught up with."""
+    fc = _demo_parcel_fc(PROP_CLASS="210", LAND_AV=6000, TOTAL_AV=6000)
+    parcels, by_addr = _build_parcel_records(fc)
+    demos = [{"stname": "999 Demolish Rd", "issued": "2024-03-04T00:00:00.000"}]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    assert stats["demolished_parcels"] == 1
+
+
+def test_join_demolitions_missing_assessment_is_not_vacancy():
+    """LAND_AV and TOTAL_AV both zero is a roll record with no assessment at
+    all. Silence isn't evidence — without a 3xx class it doesn't count."""
+    fc = _demo_parcel_fc(PROP_CLASS="210", LAND_AV=0, TOTAL_AV=0)
+    parcels, by_addr = _build_parcel_records(fc)
+    demos = [{"stname": "999 Demolish Rd", "issued": "2024-03-04T00:00:00.000"}]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    assert stats["demolished_parcels"] == 0
+    assert stats["permit_but_not_vacant"] == 1
+
+
+def test_join_demolitions_reports_max_issued_date():
+    parcels, by_addr = _build_parcel_records(_demo_parcel_fc())
+    demos = [
+        {"stname": "999 Demolish Rd", "issued": "2019-02-01T00:00:00.000"},
+        {"stname": "NOWHERE AT ALL", "issued": "2026-07-30T00:00:00.000"},
+    ]
+    stats = _join_demolitions(parcels, by_addr, demos)
+    # Max date spans unmatched permits too — it describes the feed, not the join.
+    assert stats["max_issued"] == "2026-07-30"
+    assert stats["unmatched"] == 1
 
 
 def test_concern_score_formula():
     p = {"code_violations_open": 3, "complaints_311_12mo": 2, "demolished": False}
     assert _compute_concern_score(p) == 8  # 2*3 + 1*2
 
-    p2 = {"code_violations_open": 0, "complaints_311_12mo": 0, "demolished": True}
-    assert _compute_concern_score(p2) == 5
+
+def test_concern_score_demolition_recency_window():
+    """A recent demolition adds 5; an old one still shows as demolished on
+    the map but stops driving the score."""
+    today = date(2026, 8, 7)
+    recent = {
+        "code_violations_open": 0, "complaints_311_12mo": 0,
+        "demolished": True, "demo_permit": {"date": "2024-05-02", "via": "sbl"},
+    }
+    old = {
+        "code_violations_open": 0, "complaints_311_12mo": 0,
+        "demolished": True, "demo_permit": {"date": "2019-05-02", "via": "sbl"},
+    }
+    assert _compute_concern_score(recent, today=today) == 5
+    assert _compute_concern_score(old, today=today) == 0
+
+
+def test_concern_score_demolition_window_boundary():
+    """The window is calendar-years-back and inclusive of the boundary day."""
+    today = date(2026, 8, 7)
+    on_boundary = {
+        "code_violations_open": 0, "complaints_311_12mo": 0,
+        "demolished": True, "demo_permit": {"date": "2021-08-07", "via": "sbl"},
+    }
+    day_before = {
+        "code_violations_open": 0, "complaints_311_12mo": 0,
+        "demolished": True, "demo_permit": {"date": "2021-08-06", "via": "sbl"},
+    }
+    assert _compute_concern_score(on_boundary, today=today) == 5
+    assert _compute_concern_score(day_before, today=today) == 0
 
 
 def test_parcel_record_carries_add_owner():

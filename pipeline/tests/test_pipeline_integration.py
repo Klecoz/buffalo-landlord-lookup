@@ -38,6 +38,7 @@ def _parcel_feature(
     mail_state: str = "NY",
     mail_zip: str = "14215",
     market_val: int = 100_000,
+    prop_class: str = "210",
 ) -> dict:
     """Build a minimal GeoJSON feature mirroring the NYS parcel schema
     (subset of fields that join._build_parcel_records actually reads)."""
@@ -67,7 +68,7 @@ def _parcel_feature(
             "MAIL_STATE": mail_state,
             "MAIL_ZIP": mail_zip,
             "PO_BOX": "",
-            "PROP_CLASS": "210",
+            "PROP_CLASS": prop_class,
             "YR_BLT": 1920,
             "FULL_MARKET_VAL": market_val,
         },
@@ -96,6 +97,9 @@ def _write_fixtures(raw_dir: Path) -> None:
                 "001-3", "300 ELM ST", "JOHN SMITH",
                 # mail = parcel addr → owner-occupied
                 mail_addr="300 ELM ST",
+                # 3xx = vacant land, which is what corroborates the
+                # demolition permit below into demolished == True.
+                prop_class="311",
             ),
         ],
     }
@@ -133,8 +137,11 @@ def _write_fixtures(raw_dir: Path) -> None:
     ]
     (raw_dir / "service_requests_311.json").write_text(json.dumps(requests_311))
 
-    # One demolition matched to parcel 3.
-    demolitions = [{"stname": "300 ELM ST", "apno": "DEMO-1", "sbl": "001-3"}]
+    # One demolition matched to parcel 3, issued recently enough to score.
+    demolitions = [{
+        "stname": "300 ELM ST", "apno": "DEMO-1", "sbl": "001-3",
+        "issued": today_iso,
+    }]
     (raw_dir / "demolitions.json").write_text(json.dumps(demolitions))
 
 
@@ -226,9 +233,14 @@ def test_pipeline_concern_score_reflects_signals(pipeline_paths):
     assert by_addr["100 MAIN ST"]["concern_score"] == 4
     # 200 MAIN ST: 0 open viol, 0 311, 0 demo = 0
     assert by_addr["200 MAIN ST"]["concern_score"] == 0
-    # 300 ELM ST: demolished = 5
+    # 300 ELM ST: recent demolition permit + vacant parcel class = 5
     assert by_addr["300 ELM ST"]["concern_score"] == 5
     assert by_addr["300 ELM ST"]["demolished"] is True
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # The permit rides through emit onto the map feature, and is omitted
+    # entirely from the parcels that never had one.
+    assert by_addr["300 ELM ST"]["demo_permit"]["date"] == today
+    assert "demo_permit" not in by_addr["100 MAIN ST"]
 
 
 def test_pipeline_runs_with_dos_index(pipeline_paths):

@@ -10,7 +10,9 @@ property-dossier UI.
 Joins:
   - Code violations  -> parcel by normalized address (then SBL fallback)
   - 311 requests     -> parcel by normalized address; type-filtered
-  - Demolitions      -> parcel by normalized address; signal only
+  - Demolitions      -> parcel by permit SBL, then normalized address;
+                        a permit only reads as "demolished" when the
+                        assessment roll also shows an empty lot
 
 We deliberately do not implement a true geospatial fallback for v1: the
 address coverage is good enough that the residual is small, and the
@@ -23,7 +25,7 @@ from __future__ import annotations
 import json
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -188,12 +190,16 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
             "prop_class": props.get("PROP_CLASS"),
             "year_built": props.get("YR_BLT"),
             "full_market_val": int(props.get("FULL_MARKET_VAL") or 0),
+            # Assessment figures — used to corroborate demolition permits.
+            "land_av": int(props.get("LAND_AV") or 0),
+            "total_av": int(props.get("TOTAL_AV") or 0),
             "geometry": geom,
             # to be filled below
             "code_violations_open": 0,
             "code_violations_total": 0,
             "complaints_311_12mo": 0,
             "demolished": False,
+            "demo_permit": None,
             "last_violation_date": None,
             "violations": [],
             "complaints": [],
@@ -295,27 +301,131 @@ def _join_311(by_addr: dict[str, dict], requests_311: list[dict]) -> tuple[int, 
     return matched, max_date
 
 
-def _join_demolitions(by_addr: dict[str, dict], demos: list[dict]) -> int:
-    matched = 0
+def _parcel_reads_vacant(p: dict) -> bool:
+    """Does the current assessment roll describe an empty lot?
+
+    Two independent signals, either of which is enough:
+      - PROP_CLASS 3xx is the NYS code for vacant land.
+      - The improvement is worth nothing: total assessed value has fallen to
+        (or below) the land-only value, i.e. the structure adds no value.
+
+    The value test demands both figures be positive. A parcel with LAND_AV
+    and TOTAL_AV both 0 is a roll record with no assessment at all — silence,
+    not evidence of an empty lot — so it only counts as vacant if PROP_CLASS
+    says so. (361 of 93,440 parcels are in that state.)
+    """
+    if (p.get("prop_class") or "").strip().startswith("3"):
+        return True
+    land_av = p.get("land_av") or 0
+    total_av = p.get("total_av") or 0
+    return land_av > 0 and total_av > 0 and total_av <= land_av
+
+
+def _join_demolitions(
+    parcels: list[dict], by_addr: dict[str, dict], demos: list[dict]
+) -> dict:
+    """Attach the latest demolition permit to each parcel, then decide which
+    parcels actually read as demolished.
+
+    A permit is an application to knock a building down, not proof that it
+    came down: permits go back to 2000, get abandoned, and get superseded by
+    rebuilds. So a permit alone sets `demo_permit`; `demolished` is only true
+    when the current assessment roll also shows an empty lot.
+
+    Matching prefers the permit's SBL over its address. Permit SBLs are 16
+    chars; parcel SBLs carry a 4-digit sub-parcel suffix on top of that, so
+    the permit key is right-padded with zeros. Address matching stays as a
+    fallback for the ~200 permits with no usable SBL.
+
+    Returns a stats dict for the meta record and the console summary.
+    """
+    by_sbl: dict[str, dict] = {}
+    for p in parcels:
+        sbl = (p.get("sbl") or "").strip()
+        if sbl:
+            by_sbl.setdefault(sbl, p)
+
+    matched_sbl = matched_addr = disagreements = unmatched = 0
+    max_issued = ""
+
     for d in demos:
-        # Permits dataset: stname + (no street number? sample had stname='216 LANDON' style? probe says stname)
-        # Permits sample includes apno, stname, sbl. stname may be just street name.
-        # Try several reconstructions.
-        parts = [d.get(k) for k in ("apno",)]  # placeholders to avoid lint
-        full = (d.get("stname") or "").strip()
-        norm = normalize_address(full)
-        parcel = _index_lookup(by_addr, norm)
-        if parcel:
-            parcel["demolished"] = True
-            matched += 1
-    return matched
+        issued = (d.get("issued") or "")[:10]
+        if issued > max_issued:
+            max_issued = issued
+
+        sbl = (d.get("sbl") or "").strip()
+        sbl_parcel = None
+        if len(sbl) >= 16:  # shorter values in this feed are junk, not SBLs
+            sbl_parcel = by_sbl.get(sbl.ljust(20, "0")) or by_sbl.get(sbl)
+        addr_parcel = _index_lookup(
+            by_addr, normalize_address((d.get("stname") or "").strip())
+        )
+
+        if sbl_parcel is not None:
+            parcel, via = sbl_parcel, "sbl"
+            matched_sbl += 1
+            if addr_parcel is not None and addr_parcel is not sbl_parcel:
+                disagreements += 1
+        elif addr_parcel is not None:
+            parcel, via = addr_parcel, "address"
+            matched_addr += 1
+        else:
+            unmatched += 1
+            continue
+
+        # Latest permit wins — a parcel demolished twice is really the story
+        # of the most recent clearance.
+        prev = parcel.get("demo_permit")
+        if prev is None or issued > (prev.get("date") or ""):
+            parcel["demo_permit"] = {"date": issued, "via": via}
+
+    demolished = permit_not_vacant = 0
+    for p in parcels:
+        if not p.get("demo_permit"):
+            continue
+        if _parcel_reads_vacant(p):
+            p["demolished"] = True
+            demolished += 1
+        else:
+            permit_not_vacant += 1
+
+    return {
+        "matched": matched_sbl + matched_addr,
+        "matched_sbl": matched_sbl,
+        "matched_address": matched_addr,
+        "sbl_address_disagreements": disagreements,
+        "unmatched": unmatched,
+        "demolished_parcels": demolished,
+        "permit_but_not_vacant": permit_not_vacant,
+        "max_issued": max_issued,
+    }
 
 
-def _compute_concern_score(p: dict) -> int:
+# A demolition permit is a live concern signal only while it's recent: a lot
+# cleared in 2004 is neighborhood history, not something the current owner is
+# doing now. Five years, hardcoded on purpose — this is a judgment call about
+# what "recent" means, not a knob worth configuring.
+DEMO_SCORE_YEARS = 5
+
+
+def _compute_concern_score(p: dict, today: date | None = None) -> int:
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+
+    demo_points = 0
+    if p.get("demolished"):
+        try:
+            cutoff = today.replace(year=today.year - DEMO_SCORE_YEARS)
+        except ValueError:  # today is Feb 29 and the target year isn't a leap year
+            cutoff = today.replace(year=today.year - DEMO_SCORE_YEARS, day=28)
+        issued = (p.get("demo_permit") or {}).get("date") or ""
+        if issued >= cutoff.isoformat():
+            demo_points = 5
+
     return (
         2 * p["code_violations_open"]
         + 1 * p["complaints_311_12mo"]
-        + (5 if p["demolished"] else 0)
+        + demo_points
     )
 
 
@@ -337,8 +447,15 @@ def join_all() -> dict:
 
     print("Joining demolitions...", file=sys.stderr)
     demos = _load_json(RAW / "demolitions.json")
-    d_matched = _join_demolitions(by_addr, demos)
-    print(f"  matched {d_matched:,}/{len(demos):,}", file=sys.stderr)
+    d = _join_demolitions(parcels, by_addr, demos)
+    print(
+        f"  matched {d['matched']:,}/{len(demos):,} permits "
+        f"({d['matched_sbl']:,} by SBL, {d['matched_address']:,} by address, "
+        f"{d['sbl_address_disagreements']:,} where the two disagreed) -> "
+        f"{d['demolished_parcels']:,} parcels demolished, "
+        f"{d['permit_but_not_vacant']:,} with a permit but a standing building",
+        file=sys.stderr,
+    )
 
     # Trim per-parcel slim lists to most recent 25 to bound JSON size
     for p in parcels:
@@ -373,7 +490,9 @@ def join_all() -> dict:
         "complaints_311_matched": c_matched,
         "complaints_311_max_date": c_max_date,
         "demolitions_total": len(demos),
-        "demolitions_matched": d_matched,
+        "demolitions_matched": d["matched"],
+        "demolitions_max_date": d["max_issued"],
+        "demolished_parcels": d["demolished_parcels"],
         "owners": len(owners),
     }
 
