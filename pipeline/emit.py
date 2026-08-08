@@ -169,6 +169,138 @@ def _slugify_unique(label: str, used: set[str]) -> str:
     return slug
 
 
+def _group_owners_by_primary_mail(by_owner: dict[str, dict]) -> dict[str, list[str]]:
+    """owner_norm -> its most-common mail key, regrouped as mail_key -> owners.
+
+    An owner's primary key is the one appearing on the most of their
+    non-self-mail parcels. Counter.most_common breaks ties by insertion order,
+    which is not stable across runs, so ties are broken alphabetically instead.
+    """
+    by_mail: dict[str, list[str]] = defaultdict(list)
+    for owner_norm, agg in by_owner.items():
+        keys = agg["mail_keys"]
+        if not keys:
+            continue
+        top_count = max(keys.values())
+        primary = sorted(k for k, c in keys.items() if c == top_count)[0]
+        if primary:
+            by_mail[primary].append(owner_norm)
+    return by_mail
+
+
+def _apply_dos_evidence(verdict: dict, sa_count: int, sa_classification: str) -> dict:
+    """Adjust a cohesion verdict using the NYS DOS service-address check.
+
+    Promote low -> medium when DOS positively rules out a service pool.
+    Cohesion alone says "low" because the LLC names don't share a stem, but if
+    DOS shows zero unrelated entities at this address, the absence-of-pool
+    signal makes a real shared owner the most likely explanation. Without DOS
+    data (sa_classification == "unknown") we have no new evidence and the
+    original verdict stands.
+
+    Demote medium -> low when DOS says the address IS a service pool. The
+    mirror of the promotion above, and the use REGISTERED_AGENT_THRESHOLD was
+    defined for ("counter-evidence to the 'real shared owner' hypothesis") but
+    never actually put to. A medium cluster is one the shared address is
+    carrying — and the address just lost its credibility. High clusters are
+    left alone: their names already form a family, and a real operator may
+    well file through an agent.
+    """
+    if verdict["confidence"] == "low" and sa_classification == "shared_owner":
+        return {
+            **verdict,
+            "confidence": "medium",
+            "evidence": (
+                verdict["evidence"]
+                + " — corroborated by clean NYS DOS check (no registered-agent pool at this address)"
+            ),
+        }
+    if verdict["confidence"] == "medium" and sa_classification == "registered_agent":
+        return {
+            **verdict,
+            "confidence": "low",
+            "evidence": (
+                verdict["evidence"]
+                + f" — but NYS DOS records {sa_count:,} businesses at this address, "
+                "so it is likely a registered-agent or filing-service pool"
+            ),
+        }
+    return verdict
+
+
+def _aggregate_cluster_co_owners(
+    by_owner: dict[str, dict], owner_norms: list[str]
+) -> tuple[Counter, dict]:
+    """Sum member owners' co-owner tallies into (counts, display-by-key).
+
+    Each co-owner key's canonical display variant is the one carrying the most
+    parcels across the cluster's members.
+    """
+    counts: Counter[frozenset] = Counter()
+    display_votes: dict[frozenset, Counter[str]] = defaultdict(Counter)
+    for o in owner_norms:
+        agg = by_owner[o]
+        displays = agg.get("co_owner_displays", {})
+        for k, c in agg.get("co_owner_counts", Counter()).items():
+            counts[k] += c
+            if k in displays:
+                display_votes[k][displays[k]] += c
+    canonical = {
+        k: votes.most_common(1)[0][0] for k, votes in display_votes.items() if votes
+    }
+    return counts, canonical
+
+
+CO_OWNERS_TOP_N = 10
+LINKED_OPS_TOP_N = 10
+
+
+def _attach_co_owner_links(clusters: dict[str, dict]) -> None:
+    """Fill each cluster's audit `co_owners` and `linked_operators` in place.
+
+    Two clusters naming the same human on their deeds are worth surfacing to
+    each other, so this runs only once every cluster exists. Keys appearing
+    across too many operators are suppressed from the link surface as noise,
+    though they stay in `co_owners` as raw evidence. Consumes and removes the
+    transient `_co_owner_*` fields so they never reach the emitted JSON.
+    """
+    co_owner_to_operators: dict[frozenset, list[tuple[str, int]]] = defaultdict(list)
+    for slug, cluster in clusters.items():
+        for k, count in cluster["_co_owner_counts"].items():
+            co_owner_to_operators[k].append((slug, count))
+
+    linkable_index = suppress_common_names(co_owner_to_operators)
+
+    for slug, cluster in clusters.items():
+        co_counts = cluster["_co_owner_counts"]
+        co_displays = cluster["_co_owner_displays"]
+        co_owners = sorted(
+            ({"name": co_displays[k], "parcels": c} for k, c in co_counts.items()),
+            key=lambda d: -d["parcels"],
+        )[:CO_OWNERS_TOP_N]
+
+        link_rows: list[dict] = []
+        for k in co_counts:
+            if k not in linkable_index:
+                continue
+            for other_slug, parcels in linkable_index[k]:
+                if other_slug == slug:
+                    continue
+                link_rows.append({
+                    "co_owner": co_displays[k],
+                    "operator_slug": other_slug,
+                    "operator_label": clusters[other_slug]["operator_label"],
+                    "parcels": parcels,
+                })
+        link_rows.sort(key=lambda d: -d["parcels"])
+
+        cluster["audit"]["co_owners"] = co_owners
+        cluster["audit"]["linked_operators"] = link_rows[:LINKED_OPS_TOP_N]
+
+        del cluster["_co_owner_counts"]
+        del cluster["_co_owner_displays"]
+
+
 def _build_operator_clusters(
     by_owner: dict[str, dict],
     agent_address_index: dict[str, int] | None = None,
@@ -192,24 +324,8 @@ def _build_operator_clusters(
         owner_to_operator: owner_norm -> operator_slug
         counts: {high, medium, low, dropped} — confidence histogram for meta.json
     """
-    # Step 1 — pick each owner's PRIMARY mail key (most common across their non-self-mail parcels)
-    primary_mail: dict[str, str] = {}
-    for owner_norm, agg in by_owner.items():
-        keys = agg["mail_keys"]
-        if not keys:
-            continue
-        # Counter.most_common ties broken by insertion order; sort key alphabetically for determinism.
-        top_count = max(keys.values())
-        candidates = sorted(k for k, c in keys.items() if c == top_count)
-        primary_mail[owner_norm] = candidates[0]
+    by_mail = _group_owners_by_primary_mail(by_owner)
 
-    # Step 2 — group owners by mailing key
-    by_mail: dict[str, list[str]] = defaultdict(list)
-    for owner_norm, key in primary_mail.items():
-        if key:
-            by_mail[key].append(owner_norm)
-
-    # Step 3 — apply rules
     clusters: dict[str, dict] = {}
     owner_to_operator: dict[str, str] = {}
     used_slugs: set[str] = set()
@@ -243,40 +359,7 @@ def _build_operator_clusters(
         else:
             sa_count = agent_address_index.get(mail_key, 0)
             sa_classification = classify_service_address(sa_count, addr_kind)
-
-        # Promote low → medium when DOS positively rules out a service pool.
-        # Cohesion alone says "low" because the LLC names don't share a stem,
-        # but if DOS shows zero unrelated entities at this address, the
-        # absence-of-pool signal makes a real shared owner the most likely
-        # explanation. Without DOS data (sa_classification == "unknown") we
-        # have no new evidence and the original verdict stands.
-        if verdict["confidence"] == "low" and sa_classification == "shared_owner":
-            verdict = {
-                **verdict,
-                "confidence": "medium",
-                "evidence": (
-                    verdict["evidence"]
-                    + " — corroborated by clean NYS DOS check (no registered-agent pool at this address)"
-                ),
-            }
-
-        # Demote medium → low when DOS says the address IS a service pool.
-        # The mirror of the promotion above, and the use REGISTERED_AGENT_
-        # THRESHOLD was defined for ("counter-evidence to the 'real shared
-        # owner' hypothesis") but never actually put to. A medium cluster is
-        # one the shared address is carrying — and the address just lost its
-        # credibility. High clusters are left alone: their names already form
-        # a family, and a real operator may well file through an agent.
-        elif verdict["confidence"] == "medium" and sa_classification == "registered_agent":
-            verdict = {
-                **verdict,
-                "confidence": "low",
-                "evidence": (
-                    verdict["evidence"]
-                    + f" — but NYS DOS records {sa_count:,} businesses at this address, "
-                    "so it is likely a registered-agent or filing-service pool"
-                ),
-            }
+        verdict = _apply_dos_evidence(verdict, sa_count, sa_classification)
 
         counts[verdict["confidence"]] += 1
 
@@ -311,24 +394,9 @@ def _build_operator_clusters(
             )
             owner_to_operator[o] = slug
 
-        # Co-owner aggregation across this cluster's member owners.
-        # Sums per-key parcel counts and picks the most-common display
-        # variant for each key (across all members).
-        cluster_co_owner_counts: Counter[frozenset] = Counter()
-        cluster_co_owner_display_counts: dict[frozenset, Counter[str]] = defaultdict(Counter)
-        for o in sorted_owners:
-            agg = by_owner[o]
-            co_displays_o = agg.get("co_owner_displays", {})
-            for k, c in agg.get("co_owner_counts", Counter()).items():
-                cluster_co_owner_counts[k] += c
-                # Vote with parcel count for the canonical display variant
-                if k in co_displays_o:
-                    cluster_co_owner_display_counts[k][co_displays_o[k]] += c
-        cluster_co_owner_displays = {
-            k: cnt.most_common(1)[0][0]
-            for k, cnt in cluster_co_owner_display_counts.items()
-            if cnt
-        }
+        cluster_co_owner_counts, cluster_co_owner_displays = _aggregate_cluster_co_owners(
+            by_owner, sorted_owners
+        )
 
         # Person-name dedup within the cluster (safe: shared mailing address
         # corroborates the merge; cross-cluster matches still stay separate).
@@ -365,8 +433,8 @@ def _build_operator_clusters(
             "pattern": verdict.get("pattern"),
             "service_address": service_address,
             "person_dedups": person_dedups,
-            "co_owners": [],          # filled in post-pass below
-            "linked_operators": [],   # filled in post-pass below
+            "co_owners": [],          # filled in by _attach_co_owner_links
+            "linked_operators": [],   # filled in by _attach_co_owner_links
         }
 
         clusters[slug] = {
@@ -389,101 +457,36 @@ def _build_operator_clusters(
         clusters[slug]["_co_owner_counts"] = cluster_co_owner_counts
         clusters[slug]["_co_owner_displays"] = cluster_co_owner_displays
 
-    # ---- Co-owner cross-cluster post-pass ---------------------------------
-    # Build a global index of co_owner_key → [(operator_slug, parcels)],
-    # apply common-name suppression for the link surface, and attach
-    # `co_owners` + `linked_operators` to each cluster's audit block.
-
-    # Step A — global key-to-operators index
-    co_owner_to_operators: dict[frozenset, list[tuple[str, int]]] = defaultdict(list)
-    for slug, cluster in clusters.items():
-        for k, count in cluster["_co_owner_counts"].items():
-            co_owner_to_operators[k].append((slug, count))
-
-    # Step B — apply suppression: keys appearing in too many distinct
-    # operators are noise for the link surface (kept as raw evidence).
-    linkable_index = suppress_common_names(co_owner_to_operators)
-
-    # Step C — fill per-cluster audit fields
-    CO_OWNERS_TOP_N = 10
-    LINKED_OPS_TOP_N = 10
-    for slug, cluster in clusters.items():
-        co_counts = cluster["_co_owner_counts"]
-        co_displays = cluster["_co_owner_displays"]
-        co_owners = sorted(
-            (
-                {"name": co_displays[k], "parcels": c}
-                for k, c in co_counts.items()
-            ),
-            key=lambda d: -d["parcels"],
-        )[:CO_OWNERS_TOP_N]
-
-        link_rows: list[dict] = []
-        for k in co_counts:
-            if k not in linkable_index:
-                continue
-            for other_slug, parcels in linkable_index[k]:
-                if other_slug == slug:
-                    continue
-                link_rows.append({
-                    "co_owner": co_displays[k],
-                    "operator_slug": other_slug,
-                    "operator_label": clusters[other_slug]["operator_label"],
-                    "parcels": parcels,
-                })
-        link_rows.sort(key=lambda d: -d["parcels"])
-        link_rows = link_rows[:LINKED_OPS_TOP_N]
-
-        cluster["audit"]["co_owners"] = co_owners
-        cluster["audit"]["linked_operators"] = link_rows
-
-        # Strip transient fields so they don't end up in emitted JSON.
-        del cluster["_co_owner_counts"]
-        del cluster["_co_owner_displays"]
+    _attach_co_owner_links(clusters)
 
     return clusters, owner_to_operator, counts
 
 
-def emit(
-    joined: dict,
-    agent_address_index: dict[str, int] | None = None,
-    dos_max_date: str | None = None,
-) -> dict[str, Path]:
-    WEB_DATA.mkdir(parents=True, exist_ok=True)
-    OWNERS_DIR.mkdir(parents=True, exist_ok=True)
-    OPERATORS_DIR.mkdir(parents=True, exist_ok=True)
+# ----------------------------------------------------------------------
+# emit() phases. Each takes what it reads as an argument and returns what
+# later phases need, so the data flowing between them is visible in emit()
+# itself. They run in the order listed here; the ordering is load-bearing
+# where noted.
+# ----------------------------------------------------------------------
 
-    parcels = joined["parcels"]
-    owners = joined["owners"]
-    meta = joined["meta"]
 
-    # Resolve owner -> slug, attach to each parcel
-    owner_slugs: dict[str, str] = {}
+def _assign_owner_slugs(owners: dict) -> dict[str, str]:
+    """owner_norm -> unique filesystem-safe slug, in owner iteration order."""
     used: set[str] = set()
-    for owner_norm in owners:
-        base = _slugify(owner_norm)
-        slug = base
-        i = 2
-        while slug in used:
-            slug = f"{base}-{i}"
-            i += 1
-        used.add(slug)
-        owner_slugs[owner_norm] = slug
+    return {owner_norm: _slugify_unique(owner_norm, used) for owner_norm in owners}
 
-    # Build a flat map parcel_id -> parcel (for owner files)
-    by_id: dict[Any, dict] = {p["parcel_id"]: p for p in parcels if p["parcel_id"]}
 
-    # ------------------------------------------------------------------
-    # owners/<slug>.json — aggregates first, geojson + files emitted after
-    # operator clustering so each artifact carries operator_slug.
-    # ------------------------------------------------------------------
-    print(f"Aggregating {len(owners):,} owners...", file=sys.stderr)
-    # First pass: build per-owner aggregates AND collect each owner's mailing-address
-    # tally. We need this completed BEFORE we can compute operator clusters and write
-    # owner files (because owner files include their operator_slug).
+def _aggregate_owners(
+    owners: dict, by_id: dict[Any, dict], owner_slugs: dict[str, str]
+) -> dict[str, dict]:
+    """Roll each owner's parcels up into one portfolio aggregate.
+
+    Runs before operator clustering, which needs the `mail_keys` tally, and
+    before owner files are written, which need the operator slug clustering
+    produces.
+    """
     by_owner: dict[str, dict] = {}
     for owner_norm, parcel_ids in owners.items():
-        slug = owner_slugs[owner_norm]
         props = []
         owner_displays: dict[str, int] = {}
         mail_keys: Counter[str] = Counter()
@@ -557,7 +560,7 @@ def emit(
         display = max(owner_displays.items(), key=lambda kv: kv[1])[0] if owner_displays else owner_norm
 
         by_owner[owner_norm] = {
-            "slug": slug,
+            "slug": owner_slugs[owner_norm],
             "display": display,
             "variants": list(owner_displays.keys()),
             "mail_keys": mail_keys,
@@ -573,14 +576,15 @@ def emit(
             "violation_type_counts": violation_type_counts,
             "top_violation_types": _top_violation_types(violation_type_counts),
         }
+    return by_owner
 
-    # Build operator clusters BEFORE writing owner files so each owner gets its operator_slug.
-    print("Clustering operators by mailing address...", file=sys.stderr)
-    clusters, owner_to_operator, cluster_counts = _build_operator_clusters(
-        by_owner,
-        agent_address_index=agent_address_index,
-        dos_max_date=dos_max_date,
-    )
+
+def _print_cluster_diagnostics(
+    clusters: dict[str, dict],
+    cluster_counts: dict[str, int],
+    agent_address_index: dict[str, int] | None,
+) -> None:
+    """Sanity output on stderr. Reads nothing the emitted files don't already say."""
     print(
         f"  {len(clusters):,} operator clusters formed "
         f"(high={cluster_counts['high']}, medium={cluster_counts['medium']}, "
@@ -588,9 +592,9 @@ def emit(
         file=sys.stderr,
     )
 
-    # Sanity-print the distribution of NYS DOS entity counts at cluster
-    # mailing addresses, so we can eyeball whether REGISTERED_AGENT_THRESHOLD
-    # is well-calibrated against the data we just computed.
+    # Distribution of NYS DOS entity counts at cluster mailing addresses, so we
+    # can eyeball whether REGISTERED_AGENT_THRESHOLD is well-calibrated against
+    # the data we just computed.
     if agent_address_index is not None and clusters:
         from nys_dos import histogram
         bands = histogram(clusters.values())
@@ -609,24 +613,26 @@ def emit(
             file=sys.stderr,
         )
 
-    # ------------------------------------------------------------------
-    # properties.geojson — emitted now so each feature carries operator_slug
-    # for the map-filter feature.
-    # ------------------------------------------------------------------
-    print("Emitting properties.geojson...", file=sys.stderr)
+
+def _write_geojson(
+    parcels: list[dict],
+    owners: dict,
+    owner_slugs: dict[str, str],
+    owner_to_operator: dict[str, str],
+) -> None:
+    """properties.geojson — the map source. Needs operator_slug, so it runs
+    after clustering, which is why clustering precedes every file write."""
     features = []
     for p in parcels:
         if not p.get("geometry"):
             continue
-        slug = owner_slugs.get(p["owner_norm"], "")
-        portfolio_size = len(owners.get(p["owner_norm"], []))
         feature_props = {
             "id": p["parcel_id"],
             "addr": p["address"],
             "owner": p["owner_raw"],
-            "owner_slug": slug,
+            "owner_slug": owner_slugs.get(p["owner_norm"], ""),
             "operator_slug": owner_to_operator.get(p["owner_norm"]),
-            "portfolio_n": portfolio_size,
+            "portfolio_n": len(owners.get(p["owner_norm"], [])),
             "violations_open": p["code_violations_open"],
             "violations_total": p["code_violations_total"],
             "complaints_311_12mo": p["complaints_311_12mo"],
@@ -648,8 +654,13 @@ def emit(
         "features": features,
     })
 
-    # Now write owner files (with operator_slug) and collect ranking aggregates.
-    print(f"Emitting {len(owners):,} owner portfolios...", file=sys.stderr)
+
+def _write_owner_files(
+    by_owner: dict[str, dict],
+    owner_to_operator: dict[str, str],
+    clusters: dict[str, dict],
+) -> list[dict]:
+    """owners/<slug>.json, one per owner. Returns the leaderboard aggregates."""
     owner_aggregates: list[dict] = []
     for owner_norm, agg in by_owner.items():
         operator_slug = owner_to_operator.get(owner_norm)
@@ -679,19 +690,23 @@ def emit(
             "complaints_311_12mo": agg["complaints_311_12mo"],
             "total_value": agg["total_value"],
         })
+    return owner_aggregates
 
-    # Write operator files.
-    print(f"Emitting {len(clusters):,} operator portfolios...", file=sys.stderr)
+
+def _write_operator_files(clusters: dict[str, dict]) -> None:
+    """operators/<slug>.json, one per cluster."""
     for slug, cluster in clusters.items():
         _atomic_write(OPERATORS_DIR / f"{slug}.json", cluster)
 
-    # ------------------------------------------------------------------
-    # top_owners.json — leaderboards
-    # ------------------------------------------------------------------
-    print("Emitting top_owners.json...", file=sys.stderr)
+
+LEADERBOARD_N = 20
+
+
+def _write_top_owners(owner_aggregates: list[dict]) -> None:
+    """top_owners.json — five owner leaderboards, government owners excluded."""
     eligible = [o for o in owner_aggregates if not _is_skipped_owner(o["owner_norm"])]
 
-    def _top(key: str, n: int = 20) -> list[dict]:
+    def _top(key: str, n: int = LEADERBOARD_N) -> list[dict]:
         ranked = sorted(eligible, key=lambda o: -o[key])
         return [
             {k: o[k] for k in ("slug", "display", "properties", "open", "all_violations", "complaints_311_12mo", "total_value")}
@@ -706,10 +721,9 @@ def emit(
         "by_value": _top("total_value"),
     })
 
-    # ------------------------------------------------------------------
-    # top_operators.json — operator leaderboard
-    # ------------------------------------------------------------------
-    print("Emitting top_operators.json...", file=sys.stderr)
+
+def _write_top_operators(clusters: dict[str, dict]) -> None:
+    """top_operators.json — the same five boards, over operator clusters."""
     op_aggs = [
         {
             "slug": c["operator_slug"],
@@ -727,7 +741,7 @@ def emit(
         for c in clusters.values()
     ]
 
-    def _top_op(key: str, n: int = 20) -> list[dict]:
+    def _top_op(key: str, n: int = LEADERBOARD_N) -> list[dict]:
         ranked = sorted(op_aggs, key=lambda o: -o[key])
         return [o for o in ranked[:n] if o[key] > 0]
 
@@ -739,17 +753,22 @@ def emit(
         "by_value": _top_op("total_value"),
     })
 
-    # Sanity: top 5 operators by property count
     if clusters:
         top_clusters = sorted(clusters.values(), key=lambda c: -c["total_properties"])[:5]
         print("\nTop 5 operators by property count (sanity check):", file=sys.stderr)
         for c in top_clusters:
             print(f"  {c['total_properties']:5d}  {c['operator_label']:60s}  @ {c['mailing_address']}", file=sys.stderr)
 
-    # ------------------------------------------------------------------
-    # address_index.json — small list for client-side search
-    # ------------------------------------------------------------------
-    print("Emitting address_index.json...", file=sys.stderr)
+
+def _write_address_index(
+    parcels: list[dict], owner_slugs: dict[str, str], by_owner: dict[str, dict]
+) -> None:
+    """address_index.json — the one file client-side search fetches.
+
+    Owner names ride in the same file so search stays one fetch. Address rows
+    keep their shape untouched; only owner rows carry the "t" discriminator,
+    and they sit after every address row.
+    """
     index = [
         {
             "addr": p["address"],
@@ -761,9 +780,6 @@ def emit(
         for p in parcels if p["address"] and p["parcel_id"]
     ]
     index.sort(key=lambda x: x["addr"])
-    # Owner names ride in the same file so search stays one fetch. Address rows
-    # keep their shape untouched; only owner rows carry the "t" discriminator,
-    # and they sit after every address row.
     owner_rows = [
         {"t": "o", "name": agg["display"], "slug": agg["slug"], "n": agg["properties"]}
         for agg in by_owner.values()
@@ -773,32 +789,83 @@ def emit(
     index.extend(owner_rows)
     _atomic_write(WEB_DATA / "address_index.json", index)
 
-    # ------------------------------------------------------------------
-    # parcels/<id>.json — per-parcel dossier with violation/complaint detail
-    # (Avoid: too many files for filesystem; instead one consolidated dossier
-    # file is overkill in size. Compromise: ship dossier_records.json keyed
-    # by parcel id, lazy-loaded once on demand.)
-    # ------------------------------------------------------------------
-    print("Emitting dossiers.json...", file=sys.stderr)
-    dossiers = {}
-    for p in parcels:
-        # Only ship dossiers for parcels with any signal — saves space
-        if (p["code_violations_total"] or p["complaints_311_12mo"] or p["demolished"]):
-            dossiers[p["parcel_id"]] = {
-                "violations": p["violations"],
-                "complaints": p["complaints"],
-            }
+
+def _write_dossiers(parcels: list[dict]) -> None:
+    """dossiers.json — violation/complaint detail keyed by parcel id.
+
+    One file per parcel would be too many files for the filesystem, and the
+    detail is too big to inline in the geojson, so it ships as one map that
+    the frontend lazy-loads once on demand. Only parcels with some signal are
+    included; the rest would be empty entries.
+    """
+    dossiers = {
+        p["parcel_id"]: {"violations": p["violations"], "complaints": p["complaints"]}
+        for p in parcels
+        if p["code_violations_total"] or p["complaints_311_12mo"] or p["demolished"]
+    }
     _atomic_write(WEB_DATA / "dossiers.json", dossiers)
 
-    # ------------------------------------------------------------------
-    # meta.json
-    # ------------------------------------------------------------------
-    print("Emitting meta.json...", file=sys.stderr)
-    meta = dict(meta)  # don't mutate caller's dict
+
+def _write_meta(meta: dict, cluster_counts: dict[str, int], dos_max_date: str | None) -> None:
+    """meta.json — refresh date, row counts, skip counts, cluster histogram."""
+    meta = dict(meta)  # don't mutate the caller's dict
     meta["clusters"] = cluster_counts
     if dos_max_date:
         meta["nys_dos_max_date"] = dos_max_date
     _atomic_write(WEB_DATA / "meta.json", meta)
+
+
+def emit(
+    joined: dict,
+    agent_address_index: dict[str, int] | None = None,
+    dos_max_date: str | None = None,
+) -> dict[str, Path]:
+    WEB_DATA.mkdir(parents=True, exist_ok=True)
+    OWNERS_DIR.mkdir(parents=True, exist_ok=True)
+    OPERATORS_DIR.mkdir(parents=True, exist_ok=True)
+
+    parcels = joined["parcels"]
+    owners = joined["owners"]
+
+    owner_slugs = _assign_owner_slugs(owners)
+    by_id: dict[Any, dict] = {p["parcel_id"]: p for p in parcels if p["parcel_id"]}
+
+    print(f"Aggregating {len(owners):,} owners...", file=sys.stderr)
+    by_owner = _aggregate_owners(owners, by_id, owner_slugs)
+
+    # Clustering runs before every file write: owner files, operator files and
+    # the geojson all carry the operator_slug it assigns.
+    print("Clustering operators by mailing address...", file=sys.stderr)
+    clusters, owner_to_operator, cluster_counts = _build_operator_clusters(
+        by_owner,
+        agent_address_index=agent_address_index,
+        dos_max_date=dos_max_date,
+    )
+    _print_cluster_diagnostics(clusters, cluster_counts, agent_address_index)
+
+    print("Emitting properties.geojson...", file=sys.stderr)
+    _write_geojson(parcels, owners, owner_slugs, owner_to_operator)
+
+    print(f"Emitting {len(owners):,} owner portfolios...", file=sys.stderr)
+    owner_aggregates = _write_owner_files(by_owner, owner_to_operator, clusters)
+
+    print(f"Emitting {len(clusters):,} operator portfolios...", file=sys.stderr)
+    _write_operator_files(clusters)
+
+    print("Emitting top_owners.json...", file=sys.stderr)
+    _write_top_owners(owner_aggregates)
+
+    print("Emitting top_operators.json...", file=sys.stderr)
+    _write_top_operators(clusters)
+
+    print("Emitting address_index.json...", file=sys.stderr)
+    _write_address_index(parcels, owner_slugs, by_owner)
+
+    print("Emitting dossiers.json...", file=sys.stderr)
+    _write_dossiers(parcels)
+
+    print("Emitting meta.json...", file=sys.stderr)
+    _write_meta(joined["meta"], cluster_counts, dos_max_date)
 
     return {
         "properties": WEB_DATA / "properties.geojson",
