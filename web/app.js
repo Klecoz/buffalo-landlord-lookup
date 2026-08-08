@@ -1662,6 +1662,12 @@ async function bootstrap() {
     }
   });
   $("#reopen-panel").addEventListener("click", () => {
+    // On phones the pill is visible while the sheet sits at peek, and
+    // rendering alone leaves it there — the button labelled "Open" has to
+    // actually open the sheet.
+    if (window.matchMedia("(max-width: 480px)").matches && window.__setSheetSnap) {
+      window.__setSheetSnap("sheet-half");
+    }
     renderLeaderboards();
   });
   setupPanelCollapse();

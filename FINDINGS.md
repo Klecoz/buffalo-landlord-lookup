@@ -487,3 +487,11 @@ inside its per-button loop, and it re-runs on every tab and kind switch. Ten
 switches on a phone added 40 document listeners, each closing over a button
 already detached from the DOM. The dismissal handlers are now registered once
 at bootstrap; only the per-button click handler is re-bound per render.
+
+### On phones, the button labelled "Open" did not open anything
+
+Closing the sheet collapses it to `sheet-peek`, which is the state where CSS
+reveals the reopen pill. Tapping it called `renderLeaderboards`, and
+`showPanel` leaves an existing snap class alone — so the sheet stayed at
+120px and the pill stayed put. The handler now lifts the sheet to half on
+phones.
