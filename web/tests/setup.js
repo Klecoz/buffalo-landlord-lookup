@@ -25,6 +25,7 @@ function buildMockMap() {
     setFilter: vi.fn(),
     setLayoutProperty: vi.fn(),
     flyTo: vi.fn(),
+    jumpTo: vi.fn(),
     fitBounds: vi.fn(),
     getZoom: vi.fn(() => 12),
     getCanvas: vi.fn(() => ({ style: { cursor: '' } })),

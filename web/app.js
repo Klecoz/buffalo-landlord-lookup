@@ -23,7 +23,10 @@ const state = {
   mapFilter: null,               // { kind: "owner"|"operator", slug, label, count } | null
 };
 
-let _selectParcelToken = 0;
+// Bumped by every navigation into a parcel view. The view captures it and
+// bails at every resume point where it no longer matches, so a stale async
+// step can't paint over a newer view.
+let _viewToken = 0;
 
 // ---------- helpers ----------
 const $ = (sel) => document.querySelector(sel);
@@ -264,6 +267,24 @@ function fullyHidePanel() {
   reopenBtn.classList.remove("hidden");
 }
 
+// Owner and operator slugs are rebuilt from the owner names on every data
+// refresh, so a bookmarked link can point at a file that no longer exists.
+// Say that outright — "couldn't load" reads like a transient network failure
+// and invites a pointless retry.
+const MISSING_RECORD_NOTE = {
+  owner: "Owner links are rebuilt each time the data is refreshed, so older bookmarks stop resolving.",
+  operator: "Operator links are rebuilt each time the data is refreshed, so older bookmarks stop resolving.",
+  parcel: "That parcel id isn't in the current assessment roll.",
+};
+
+function showMissingRecord(kind) {
+  showPanel(`
+    <h2>Not in the current dataset</h2>
+    <p class="empty">${MISSING_RECORD_NOTE[kind] || MISSING_RECORD_NOTE.parcel}</p>
+    <p class="empty">Search for an address, or <a href="#/top/by_open_violations/operators">browse the top landlords</a>.</p>
+  `);
+}
+
 async function loadDossiers() {
   if (state.dossiers) return state.dossiers;
   try {
@@ -441,29 +462,54 @@ function initMap() {
 }
 
 // ---------- views ----------
+// Resolves once the map has finished loading and rendering. The ceiling keeps
+// a wedged tile request from hanging a route forever.
+function _mapIdle(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => { if (!settled) { settled = true; resolve(); } };
+    state.map.once("idle", finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+// querySourceFeatures only returns features from tiles currently loaded in the
+// viewport, so a parcel reached by deep link — which is exactly what the
+// "Copy link" button hands out — isn't there on arrival. Move the camera to the
+// centroid recorded in the address index, then query again once tiles settle.
+async function _parcelFeature(parcelId) {
+  const query = () => state.map.querySourceFeatures("parcels", {
+    filter: ["==", "id", parcelId],
+  })?.[0];
+
+  const onScreen = query();
+  if (onScreen) return onScreen;
+
+  const known = state.addressIndex.find(a => a.id === parcelId);
+  if (!known || known.lat == null || known.lng == null) return null;
+  state.map.jumpTo({ center: [known.lng, known.lat], zoom: Math.max(state.map.getZoom(), 17) });
+  await _mapIdle();
+  return query() || null;
+}
+
 async function selectParcel(parcelId) {
-  const myToken = ++_selectParcelToken;
+  const myToken = ++_viewToken;
   state.selectedId = parcelId;
+
+  const feat = await _parcelFeature(parcelId);
+  if (myToken !== _viewToken) return;
+  if (!feat) {
+    showMissingRecord("parcel");
+    return;
+  }
+  const props = feat.properties;
+
   if (state.map.getLayer("parcels-selected")) {
     state.map.setFilter("parcels-selected", ["==", "id", parcelId]);
   }
 
-  // Find the feature in the rendered source
-  const feats = state.map.querySourceFeatures("parcels", {
-    filter: ["==", "id", parcelId],
-  });
-  let props = feats?.[0]?.properties;
-
-  // Fallback: scan address_index → properties.geojson is huge, but we already
-  // rendered. If empty, querySourceFeatures may need higher zoom. Skip fallback;
-  // if we can't find props, we just show a minimal panel.
-  if (!props) {
-    showPanel(`<p class="error">Couldn't load that parcel — try zooming in and clicking again.</p>`);
-    return;
-  }
-
   // Fly to it
-  const geom = feats[0].geometry;
+  const geom = feat.geometry;
   if (geom?.type === "Polygon" && geom.coordinates?.[0]?.length) {
     const coords = geom.coordinates[0];
     const lng = coords.reduce((a, c) => a + c[0], 0) / coords.length;
@@ -472,6 +518,7 @@ async function selectParcel(parcelId) {
   }
 
   await loadDossiers();
+  if (myToken !== _viewToken) return;
   const dossier = state.dossiers[parcelId];
   renderDossier(props, dossier);
   location.hash = `#/parcel/${encodeURIComponent(parcelId)}`;
@@ -780,9 +827,9 @@ window.gotoParcel = function (id, lat, lng) {
   if (state.map && state.map.loaded?.() && state.map.isStyleLoaded?.()) {
     selectParcel(id);
   } else if (state.map) {
-    const gotoToken = ++_selectParcelToken;
+    const gotoToken = ++_viewToken;
     state.map.once("idle", () => {
-      if (gotoToken !== _selectParcelToken) return;
+      if (gotoToken !== _viewToken) return;
       selectParcel(id);
     });
   }
@@ -1296,9 +1343,9 @@ function setupSearch() {
     if (!isNaN(lat) && !isNaN(lng)) {
       state.map.flyTo({ center: [lng, lat], zoom: 18 });
       // Wait for the fly + tile load before trying to read the rendered feature
-      const searchToken = ++_selectParcelToken;
+      const searchToken = ++_viewToken;
       state.map.once("idle", () => {
-        if (searchToken !== _selectParcelToken) return;
+        if (searchToken !== _viewToken) return;
         selectParcel(li.dataset.id);
       });
     } else {

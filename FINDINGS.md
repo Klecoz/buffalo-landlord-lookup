@@ -424,3 +424,23 @@ dropped out of the top 10, Sokolov 94 LLC entered.
 
 NOT deployed — deploy is a single atomic step at the end of the effort
 (frontend schema changes must ship with this data).
+
+## 2026-08-08 — Web bug hunt (Item 6)
+
+### Deep links to a parcel never resolved
+
+`selectParcel` read a parcel's properties from `map.querySourceFeatures`,
+which only returns features from tiles already loaded *in the current
+viewport*. A `#/parcel/:id` URL opened cold — exactly what the dossier's
+"Copy link" button hands out — lands on the default city-wide view, matches
+nothing, and rendered "Couldn't load that parcel — try zooming in and
+clicking again". Every shared dossier link was broken, and the message
+blamed the reader's zoom level for a lookup problem.
+
+The address index already carries a centroid for all 93,069 parcels, so the
+parcel can be found by jumping the camera there and re-querying once the map
+goes idle. The wait has a 5s ceiling — a wedged tile request must not hang a
+route forever.
+
+Reaching the not-found branch now means the id is in neither the rendered
+source nor the address index, which is a genuinely unknown parcel.

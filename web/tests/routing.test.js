@@ -177,3 +177,63 @@ describe('applyHashRoute — parcel route', () => {
     expect(t.state.selectedId).toBe('already-selected')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Deep links — querySourceFeatures only sees tiles loaded in the current
+// viewport, so a parcel URL opened cold (exactly what "Copy link" hands out)
+// found nothing and rendered an error.
+// ---------------------------------------------------------------------------
+
+describe('selectParcel — parcel outside the loaded viewport', () => {
+  const FEATURE = {
+    properties: {
+      id: 'far-away-parcel', addr: '1 Agassiz Cir', owner: 'SOMEONE',
+      owner_slug: 'someone', violations_open: 0, violations_total: 0,
+      complaints_311_12mo: 0, portfolio_n: 1,
+    },
+    geometry: { type: 'Polygon', coordinates: [[[-78.85, 42.93], [-78.85, 42.94]]] },
+  }
+
+  beforeEach(() => {
+    t.state.addressIndex = [
+      { addr: '1 Agassiz Cir', id: 'far-away-parcel', lat: 42.93, lng: -78.85 },
+    ]
+    // Nothing on screen at first; the feature appears once the camera moves
+    // and the map goes idle.
+    let moved = false
+    t.state.map.querySourceFeatures = vi.fn(() => (moved ? [FEATURE] : []))
+    t.state.map.jumpTo = vi.fn(() => { moved = true })
+    t.state.map.once = vi.fn((evt, cb) => { if (evt === 'idle') cb() })
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: vi.fn().mockResolvedValue({}),
+    })
+  })
+
+  it('moves the camera to the parcel recorded in the address index', async () => {
+    location.hash = '#/parcel/far-away-parcel'
+    t.applyHashRoute()
+    await vi.waitFor(() => expect(t.state.map.jumpTo).toHaveBeenCalled())
+    expect(t.state.map.jumpTo.mock.calls[0][0].center).toEqual([-78.85, 42.93])
+  })
+
+  it('renders the dossier instead of an error', async () => {
+    location.hash = '#/parcel/far-away-parcel'
+    t.applyHashRoute()
+    await vi.waitFor(() => {
+      expect(document.getElementById('panel-content').textContent).toContain('Property Dossier')
+    })
+    expect(document.getElementById('panel-content').textContent).toContain('1 Agassiz Cir')
+  })
+
+  it('reports a parcel id that is in no index as not in the dataset', async () => {
+    t.state.addressIndex = []
+    t.state.map.querySourceFeatures = vi.fn(() => [])
+    location.hash = '#/parcel/no-such-parcel'
+    t.applyHashRoute()
+    await vi.waitFor(() => {
+      expect(document.getElementById('panel-content').textContent)
+        .toContain('Not in the current dataset')
+    })
+    expect(t.state.map.jumpTo).not.toHaveBeenCalled()
+  })
+})

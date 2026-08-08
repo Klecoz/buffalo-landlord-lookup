@@ -2,6 +2,21 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — Deep-linked parcels are found via the address index
+
+`selectParcel` falls back to the centroid in `state.addressIndex` and
+re-queries the map source after an idle wait, rather than reading the dossier
+out of a smaller side-channel.
+
+The alternative was to render what the address index already holds (address,
+owner slug, coordinates) and skip the map entirely. Rejected: the dossier
+needs violation counts, 311 counts, value, and `demo_permit`, which live only
+in `properties.geojson`. Serving a partial dossier for deep links and a full
+one for map clicks would make the same URL render two different pages
+depending on how you got there.
+
+The idle wait is capped at 5s so a wedged tile request degrades to the
+not-found panel instead of hanging the route.
 ## 2026-08-07 — Violations join gets an SBL fallback, address stays primary
 
 `_join_violations` now tries the row's `sbl` when the normalized address
