@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from join import (
     _build_parcel_records,
     _compute_concern_score,
+    _index_by_sbl,
     _join_311,
     _join_demolitions,
     _join_violations,
@@ -343,3 +344,67 @@ def test_parcel_record_add_owner_blank_when_missing():
     }
     parcels, _ = _build_parcel_records(geo)
     assert parcels[0]["add_owner"] == ""
+
+
+# --- violation SBL fallback ---------------------------------------------
+
+
+def test_join_violations_falls_back_to_sbl_when_address_misses():
+    """The module docstring promises 'by normalized address (then SBL
+    fallback)'. Violations carry a 16-char `sbl` and the roll address often
+    disagrees with the one the inspector typed — without the fallback those
+    violations vanish from the owner's portfolio."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "216", "LOC_STREET": "Landon", "PRIMARY_OWNER": "X",
+         "SBL": "1005100001049100" + "0000"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    by_sbl = _index_by_sbl(parcels)
+    violations = [
+        # Address the roll has never heard of, but the SBL is the parcel's.
+        {"address": "216 LANDON REAR APT 2", "status": "ACTIVE",
+         "sbl": "1005100001049100", "date": "2026-01-01T00:00:00.000"},
+    ]
+    matched, _ = _join_violations(by_addr, violations, by_sbl)
+    assert matched == 1
+    assert parcels[0]["code_violations_total"] == 1
+    assert parcels[0]["code_violations_open"] == 1
+
+
+def test_join_violations_prefers_address_over_sbl():
+    """Address stays the primary key: where both match, the address wins and
+    the violation is counted exactly once."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "216", "LOC_STREET": "Landon", "PRIMARY_OWNER": "X",
+         "SBL": "1005100001049100" + "0000"},
+        {"LOC_ST_NBR": "322", "LOC_STREET": "Bedford", "PRIMARY_OWNER": "Y",
+         "SBL": "0892100005011000" + "0000"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    by_sbl = _index_by_sbl(parcels)
+    violations = [
+        {"address": "216 Landon", "status": "ACTIVE",
+         "sbl": "0892100005011000", "date": "2026-01-01T00:00:00.000"},
+    ]
+    matched, _ = _join_violations(by_addr, violations, by_sbl)
+    assert matched == 1
+    assert parcels[0]["code_violations_total"] == 1
+    assert parcels[1]["code_violations_total"] == 0
+
+
+def test_join_violations_ignores_junk_short_sbl():
+    """Most of the feed's non-16-char `sbl` values are 4-6 char fragments.
+    They must not be padded into an accidental match."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "216", "LOC_STREET": "Landon", "PRIMARY_OWNER": "X",
+         "SBL": "10051" + "000000000000000"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    by_sbl = _index_by_sbl(parcels)
+    violations = [
+        {"address": "999 NOWHERE", "status": "ACTIVE", "sbl": "10051",
+         "date": "2026-01-01T00:00:00.000"},
+    ]
+    matched, _ = _join_violations(by_addr, violations, by_sbl)
+    assert matched == 0
+    assert parcels[0]["code_violations_total"] == 0

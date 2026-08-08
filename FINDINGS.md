@@ -242,3 +242,24 @@ applied at the next full run.
   ARC_PAGE=1000 we request, so it returns full pages. Today's parcel pull is
   complete — `returnCountOnly` on the live service reports exactly 93,440
   features for `MUNI_NAME='Buffalo'`, matching `raw/parcels.geojson`.
+- **The code-violation SBL fallback was documented but never implemented.**
+  `join.py`'s module docstring has always described the violations join as "by
+  normalized address (then SBL fallback)"; `_join_violations` only ever tried
+  the address. 228,379 of 250,586 violations carry a usable 16-char `sbl`, and
+  on the 2026-08-07 pull the fallback recovers 18,589 of the 21,460 rows the
+  address join misses — 7.4% of the whole feed, previously absent from every
+  owner's portfolio and concern score. Only 73 of 229,126 address matches
+  disagree with the row's SBL, so address-first/SBL-second is safe; only 2,871
+  violations now match nothing at all.
+- **SBL matching is shared between the violations and demolitions joins**
+  (`_sbl_lookup`). Source feeds carry the 16-char base SBL; the parcel roll
+  carries base+4-digit sub-parcel suffix for 93,079 parcels and the bare
+  16-char form for 354, so both spellings are tried. Values under 16 chars are
+  truncated junk (16,131 violations have a 5-char `sbl`) and are rejected —
+  padding them would manufacture matches.
+- **17-char SBLs never match, and are left that way.** 252 violations and 22
+  demolition permits carry a 16-char base plus a trailing letter
+  (`1114300011003000A`) — a sub-parcel designation the roll doesn't use.
+  Truncating to `[:16]` and padding would match a real parcel for about half
+  of them, but that collapses a sub-parcel onto its base parcel on a guess, so
+  it isn't done.
