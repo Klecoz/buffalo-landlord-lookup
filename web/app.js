@@ -1406,6 +1406,17 @@ async function loadTopOperators() {
   }
 }
 
+// Hash segments come from a user-editable URL bar, so a stray "%" or a
+// truncated escape reaches decodeURIComponent and throws URIError. Undecodable
+// segments are treated as records we don't have.
+function decodeSegment(raw) {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
 function applyHashRoute() {
   const hash = location.hash;
   // Clear the search input address label when navigating away from a parcel
@@ -1415,13 +1426,16 @@ function applyHashRoute() {
   }
   let m;
   if ((m = hash.match(/^#\/parcel\/(.+)$/))) {
-    const id = decodeURIComponent(m[1]);
+    const id = decodeSegment(m[1]);
+    if (id === null) return showMissingRecord("parcel");
     if (id !== state.selectedId) selectParcel(id);
   } else if ((m = hash.match(/^#\/owner\/([^/]+)(\/highlight)?$/))) {
-    const slug = decodeURIComponent(m[1]);
+    const slug = decodeSegment(m[1]);
+    if (slug === null) return showMissingRecord("owner");
     window.openPortfolio(slug, { highlight: !!m[2] });
   } else if ((m = hash.match(/^#\/operator\/([^/]+)(\/highlight)?$/))) {
-    const slug = decodeURIComponent(m[1]);
+    const slug = decodeSegment(m[1]);
+    if (slug === null) return showMissingRecord("operator");
     window.openOperator(slug, { highlight: !!m[2] });
   } else if ((m = hash.match(/^#\/top\/([^/]+)\/([^/]+)$/))) {
     const board = m[1];

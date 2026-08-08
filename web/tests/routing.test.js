@@ -237,3 +237,43 @@ describe('selectParcel — parcel outside the loaded viewport', () => {
     expect(t.state.map.jumpTo).not.toHaveBeenCalled()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Malformed percent-encoding — a stray "%" in a hand-edited URL used to reach
+// decodeURIComponent and throw an uncaught URIError, leaving the panel showing
+// whatever the previous route had rendered.
+// ---------------------------------------------------------------------------
+
+describe('applyHashRoute — undecodable segments', () => {
+  const MALFORMED = '%E0%A4%A'
+
+  it('does not throw on a malformed owner slug', () => {
+    location.hash = `#/owner/${MALFORMED}`
+    expect(() => t.applyHashRoute()).not.toThrow()
+  })
+
+  it('shows the not-in-dataset panel for a malformed owner slug', () => {
+    location.hash = `#/owner/${MALFORMED}`
+    t.applyHashRoute()
+    expect(document.getElementById('panel-content').textContent)
+      .toContain('Not in the current dataset')
+  })
+
+  it('does not throw on a malformed operator slug', () => {
+    location.hash = `#/operator/${MALFORMED}`
+    expect(() => t.applyHashRoute()).not.toThrow()
+  })
+
+  it('does not throw on a malformed parcel id', () => {
+    location.hash = `#/parcel/${MALFORMED}`
+    expect(() => t.applyHashRoute()).not.toThrow()
+  })
+
+  it('does not dispatch to the owner loader for a malformed slug', () => {
+    const spy = vi.spyOn(window, 'openPortfolio')
+    location.hash = `#/owner/${MALFORMED}`
+    t.applyHashRoute()
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+})

@@ -444,3 +444,11 @@ route forever.
 
 Reaching the not-found branch now means the id is in neither the rendered
 source nor the address index, which is a genuinely unknown parcel.
+
+### A stray "%" in the URL threw an uncaught URIError
+
+`applyHashRoute` fed raw hash segments to `decodeURIComponent`, so
+`#/owner/%E0%A4%A` (a truncated escape, easy to produce by hand-editing or by
+a link that got cut) threw `URIError: URI malformed` out of the hashchange
+handler. The panel kept whatever the previous route had rendered, so the URL
+and the panel disagreed with no visible error.
