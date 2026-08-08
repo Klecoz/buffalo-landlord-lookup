@@ -395,3 +395,32 @@ applied at the next full run.
   empty), so `emit`'s `by_id` map can't drop a parcel or double-count one into
   an owner's aggregate. The 20-char SBL is unique across all 93,440 raw
   features too.
+
+## 2026-08-08 — Dataset refresh (Item 5)
+
+Full canonical run (fetch → NYS DOS refresh → join → emit) with all Item 2–4
+fixes in place, 1,214s end to end. `web/data/` is not versioned, so the counts
+live here:
+
+- parcels 93,069 (May: 93,069) · owners 65,072 (May: 65,089)
+- violations 250,586 total, **247,696 matched (98.8%)** — May matched 220,068;
+  the jump is Item 4's SBL fallback + ordered paging recovering rows that were
+  always in the source, plus ~3 months of new data
+  (`code_violations_max_date` 2026-07-24)
+- 311 max date **2024-05-10 — still frozen upstream, as expected**
+- demolitions 10,822 permits → 8,979 matched → **6,720 parcels demolished**
+  (2,020 more hold a permit over a still-standing building);
+  `demolitions_max_date` 2026-07-13
+- clusters 2,200: high 1,318 · medium 846 · low 36 · dropped 4
+  (May: 1,330/855/19/4 — shifts match the Item 2 fix projections)
+- NYS DOS index rebuilt with ordered paging, `nys_dos_max_date` 2026-08-06;
+  26 clusters now flagged at registered-agent addresses
+- orphaned owner/operator JSON purged (output dirs cleared before emit);
+  exactly 65,072 owner + 2,200 operator files remain
+
+Top-10 leaderboards vs the live May site are stable — same operators, counts
+up modestly. Only churn in the open-violations board: SRE Management LLC
+dropped out of the top 10, Sokolov 94 LLC entered.
+
+NOT deployed — deploy is a single atomic step at the end of the effort
+(frontend schema changes must ship with this data).
