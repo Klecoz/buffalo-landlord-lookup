@@ -267,6 +267,11 @@ def _person_signature(name: str) -> Optional[frozenset[str]]:
             return None
         if toks[-1].lower() in _ORG_TAIL_TOKENS:
             return None
+        # "SMITH JOHN A" is the roll's other spelling of "SMITH, JOHN A" —
+        # last name first, middle initial trailing. Drop trailing initials
+        # so it keys the same as the comma form, which already ignores them.
+        while len(toks) > 2 and len(toks[-1]) == 1:
+            toks.pop()
         first, last = toks[0], toks[-1]
     if len(first) < 2 or len(last) < 2:
         return None

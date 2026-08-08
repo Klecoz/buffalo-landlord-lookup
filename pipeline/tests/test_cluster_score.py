@@ -437,3 +437,48 @@ def test_classify_alter_ego_survives_for_a_real_person():
     verdict = classify_cluster(["Aurum Apartments LLC", "Michaels Paul"], "street")
     assert verdict["pattern"] == "alter_ego"
     assert verdict["confidence"] == "high"
+
+
+# --- trailing middle initials -------------------------------------------
+
+def test_dedup_merges_last_name_first_form_with_trailing_initial():
+    """Real false split: "Adkins, Cassandra" and "Adkins Cassandra C" are
+    one person, shown as two owners of the adkins-cassandra cluster.
+
+    Without a comma the old signature took the last token as the surname,
+    found a one-character initial, and gave up entirely.
+    """
+    groups = dedup_persons_in_cluster([
+        _owner("adkins-cassandra", "Adkins, Cassandra", 2),
+        _owner("adkins-cassandra-c", "Adkins Cassandra C", 1),
+    ])
+    assert len(groups) == 1
+    assert groups[0]["variants"] == ["Adkins Cassandra C"]
+    assert groups[0]["property_count"] == 3
+
+
+def test_dedup_merges_two_spaced_forms_differing_only_by_initial():
+    """"Ashley Patricia E" / "Ashley Patricia", both without a comma."""
+    groups = dedup_persons_in_cluster([
+        _owner("ashley-patricia-e", "Ashley Patricia E", 2),
+        _owner("ashley-patricia", "Ashley Patricia", 1),
+    ])
+    assert len(groups) == 1
+
+
+def test_dedup_still_separates_different_surnames_with_initials():
+    groups = dedup_persons_in_cluster([
+        _owner("adkins-cassandra-c", "Adkins Cassandra C", 1),
+        _owner("brown-cassandra-c", "Brown Cassandra C", 1),
+    ])
+    assert len(groups) == 2
+
+
+def test_person_signature_keeps_two_token_names_intact():
+    """The strip must never eat a name down below first + last."""
+    groups = dedup_persons_in_cluster([
+        _owner("li-x", "Li X", 1),
+        _owner("li-wei", "Li Wei", 1),
+    ])
+    # "Li X" has a one-character token as its surname and stays unkeyable.
+    assert len(groups) == 2

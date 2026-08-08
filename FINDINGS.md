@@ -106,6 +106,14 @@ cluster the NYS DOS join flagged as a registered-agent address).
   Townhomes II Housing" with "St Martin Village Housing", "Peninsula Property
   Holdings" with "Peninsula Wholesale Holdings".
 
+- **A trailing middle initial made a person unkeyable.** The roll writes
+  people both as "Adkins, Cassandra" and as "Adkins Cassandra C". Without the
+  comma, `_person_signature` took the last token as the surname, saw a
+  one-character initial and returned None — so the two spellings never merged,
+  even though the comma form has always ignored middle initials. 8,148 owner
+  displays were affected; dropping trailing initials merges person variants in
+  133 clusters and splits none.
+
 ### Known limitations, measured but deliberately not fixed
 
 - **A two-owner cluster can never score below 0.5.** The cohesion formula is

@@ -2,6 +2,19 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-07 — Trailing middle initials are dropped from person keys
+
+`_person_signature` pops one-character trailing tokens (never below two
+tokens) before taking first + last. This makes the space-separated "Adkins
+Cassandra C" key the same as the comma form "Adkins, Cassandra", which has
+always ignored middle initials.
+
+It follows that "Smith John A" and "Smith John B" now merge inside a cluster.
+That is acceptable for the same reason the comma form's behaviour always was:
+the merge only ever happens among owners already sharing a mailing address,
+which corroborates it. Rejected: keeping the two spellings apart (leaves 8,148
+owner records unkeyable and the two name formats inconsistent with each other).
+
 ## 2026-08-07 — A name ending in business vocabulary is not a person
 
 `_person_signature` returns None when the last token of a non-comma name is
