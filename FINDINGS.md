@@ -523,3 +523,31 @@ alphanumeric across all 93,069 parcels today, but nothing enforces that, and
 `escapeHtml` is the wrong layer inside a JS-string context anyway — the
 browser decodes entities before the JS parser runs. All seven sites now carry
 their argument in a `data-*` attribute.
+
+### Suspects that came back clean
+
+- **Search never builds a RegExp** — matching is `String.includes` on an
+  uppercased query, so `.*` and `([a-z]+)?$` are literal. Empty, sub-3-char,
+  5,000-char, and no-match queries all behave. Arrow-key result navigation
+  isn't implemented (a gap for Item 8, not a bug).
+- **CSV quoting** is RFC 4180-correct, and unreachable in practice: the export
+  carries addresses, and no address in the dataset contains a comma, quote, or
+  newline. Owner names that do (`Holcomb, Clinton`) never enter the CSV body —
+  only the filename, via the slug.
+- **Bottom-sheet drag** clamps to [80px, viewport height] at both extremes and
+  snaps to the nearest of peek/half/full; a tap under 6px cycles states.
+- **Rotating to landscape** drops below the 480px phone breakpoint, so the
+  sheet reverts to the desktop side panel and the leftover snap class goes
+  inert. No horizontal overflow at 844×390.
+- **Unknown routes and `#/parcel/` with no id** already fell through to the
+  leaderboards.
+- `demoPermit`'s string/object dual handling is still required — untouched.
+
+### Local dev silently tests production data
+
+`web/config.js` is gitignored and sets `DATA_BASE` to the deployed R2 bucket,
+and `index.html` swallows its load error. A local `python -m http.server`
+therefore serves the local `index.html`/`app.js` against **live R2 data**,
+which during this effort was still the May build. Move it aside to exercise
+`web/data/`. Browser caching of `config.js` survives the file being removed —
+use a fresh port.
