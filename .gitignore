@@ -11,7 +11,9 @@ venv/
 .DS_Store
 .claude/
 .wrangler/
-web/node_modules/
+# Bare (not web/-prefixed): vitest also drops a .vite cache in a node_modules/
+# at the repo root when it is invoked from outside web/.
+node_modules/
 web/coverage/
 pipeline/htmlcov/
 .coverage
