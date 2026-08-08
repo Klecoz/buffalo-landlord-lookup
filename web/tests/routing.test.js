@@ -34,7 +34,7 @@ describe('applyHashRoute — empty hash', () => {
     // hidePanel calls renderLeaderboards internally, which needs topOwners/topOperators
     t.applyHashRoute()
     // After hidePanel the panel content should contain the leaderboard heading
-    expect(document.getElementById('panel-content').textContent).toContain('Top Landlords')
+    expect(document.getElementById('panel-content').textContent).toContain('Top landlords')
   })
 })
 
@@ -53,7 +53,7 @@ describe('applyHashRoute — leaderboard route', () => {
   it('renders the leaderboard panel', () => {
     location.hash = '#/top/by_open_violations/operators'
     t.applyHashRoute()
-    expect(document.getElementById('panel-content').textContent).toContain('Top Landlords')
+    expect(document.getElementById('panel-content').textContent).toContain('Top landlords')
   })
 
   it('ignores an unknown board key', () => {
@@ -220,7 +220,7 @@ describe('selectParcel — parcel outside the loaded viewport', () => {
     location.hash = '#/parcel/far-away-parcel'
     t.applyHashRoute()
     await vi.waitFor(() => {
-      expect(document.getElementById('panel-content').textContent).toContain('Property Dossier')
+      expect(document.getElementById('panel-content').textContent).toContain('Property dossier')
     })
     expect(document.getElementById('panel-content').textContent).toContain('1 Agassiz Cir')
   })

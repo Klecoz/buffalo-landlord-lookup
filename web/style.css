@@ -903,10 +903,6 @@ body.panel-collapsed #panel-collapse {
   background: transparent;
   border: 0;
 }
-.conf-badge::before {
-  content: "Confidence ";
-  color: var(--ink-2);
-}
 .conf-badge.conf-high   { color: var(--ink); font-weight: 500; }
 .conf-badge.conf-medium { color: var(--ink-2); }
 .conf-badge.conf-low    { color: var(--ink-2); }

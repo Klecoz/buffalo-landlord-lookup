@@ -224,7 +224,7 @@ window.copyCurrentUrl = function (btn) {
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url)
-      .then(() => flash("Copied!", "copied"))
+      .then(() => flash("Copied", "copied"))
       .catch(() => flash("Press ⌘C", "copied"));
   } else {
     flash("Press ⌘C", "copied");
@@ -656,7 +656,7 @@ function renderDossier(props, dossier) {
 
   showPanel(`
     <div class="panel-head">
-      <h2>Property Dossier</h2>
+      <h2>Property dossier</h2>
       ${_panelHeadActionsHtml(null)}
     </div>
     <div class="addr">${escapeHtml(props.addr)}</div>
@@ -669,7 +669,7 @@ function renderDossier(props, dossier) {
       </div>
       <div class="stat">
         <div class="num">${props.violations_total}</div>
-        <div class="label">Violations all-time</div>
+        <div class="label">All-time violations</div>
       </div>
       <div class="stat ${props.complaints_311_12mo > 2 ? "warn" : ""}">
         <div class="num">${props.complaints_311_12mo}</div>
@@ -855,14 +855,14 @@ function renderPortfolio(portfolio) {
 
   showPanel(`
     <div class="panel-head">
-      <h2>Owner Portfolio</h2>
+      <h2>Owner portfolio</h2>
       ${_panelHeadActionsHtml("portfolio")}
     </div>
     <div class="addr">${escapeHtml(portfolio.owner_display)}</div>
     ${operatorHint}
     ${portfolio.operator_slug
       ? ""
-      : `<p class="evidence sub-note">Single owner — no LLC grouping applied. Properties owned by the same person under shell LLCs with distinct names may appear separately.</p>`}
+      : `<p class="evidence sub-note">Single owner — no LLC grouping applied.</p>`}
     ${variants}
 
     <div class="stat-grid stat-grid--compact">
@@ -872,7 +872,7 @@ function renderPortfolio(portfolio) {
       </div>
       <div class="stat ${portfolio.total_violations > 20 ? "bad" : portfolio.total_violations > 5 ? "warn" : ""}">
         <div class="num">${portfolio.total_violations}</div>
-        <div class="label">Violations (sum)</div>
+        <div class="label">All-time violations</div>
       </div>
       <div class="stat">
         <div class="num">${fmtMoney(portfolio.total_value)}</div>
@@ -1153,7 +1153,7 @@ function renderLeaderboards() {
 
   showPanel(`
     <div class="panel-head">
-      <h2>Top Landlords</h2>
+      <h2>Top landlords</h2>
       ${_panelHeadActionsHtml(null)}
     </div>
     <p class="empty" style="margin:0 0 8px;">Public records, ranked. Excludes city, county, state, and federal owners.</p>
@@ -1162,7 +1162,7 @@ function renderLeaderboards() {
     <div class="tabs">${tabs}</div>
 
     ${list.length === 0
-      ? `<p class="empty">No entries with non-zero count for this category.</p>`
+      ? `<p class="empty">No entries with a non-zero count on this board.</p>`
       : `<ul class="leaderboard${active.concern ? " leaderboard--concern" : ""}">${rows}</ul>`
     }
 
@@ -1297,7 +1297,7 @@ function renderAuditDisclosure(op) {
         <span class="audit-summary-mobile">${escapeHtml(mobileSummary)}</span>
       </summary>
       <ul class="audit-list">${auditRows}</ul>
-      <p class="audit-foot sub">${a.member_count} LLC${a.member_count === 1 ? "" : "s"} merged into one operator. Bulk LLC ownership data is not publicly available in NYS, so this is the best inference the public data allows.</p>
+      <p class="audit-foot sub">${a.member_count} LLC${a.member_count === 1 ? "" : "s"} merged into one operator.</p>
     </details>`;
 }
 

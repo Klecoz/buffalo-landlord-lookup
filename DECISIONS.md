@@ -2,6 +2,24 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — Duplicated hedges are trimmed at the conditional site, not the permanent one
+
+Two cautions were each rendered twice inside one panel. Where a hedge appeared
+both in a bottom disclaimer that always renders and in a conditional element (an
+expandable audit disclosure, a sub-note shown only for un-clustered owners), the
+sentence was removed from the conditional element.
+
+Taken: keep the copy that cannot be missed. A reader who never expands the audit
+disclosure still gets the full caveat; a reader who does gets it once instead of
+twice.
+
+Rejected: keeping it in the disclosure and trimming the disclaimer. The
+disclosure is collapsed by default, so that would let a reader reach the bottom
+of the operator view having never seen the caveat.
+
+Rejected: leaving both. Verbatim repetition inside one view is the specific tell
+this pass exists to remove, and the repetition carried no new information.
+
 ## 2026-08-08 — Search results order addresses first, owners second
 
 Owner names now match in the same search box as addresses, which needs a rule

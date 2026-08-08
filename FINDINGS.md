@@ -3,6 +3,62 @@
 Facts about this system discovered while working on it — root causes, surprises,
 dead ends. Not a changelog; see git history for that.
 
+## 2026-08-08 — prose de-slop pass: the copy was already in voice
+
+Audited every user-facing literal in `web/index.html`, `web/app.js`,
+`pipeline/emit.py`, `pipeline/cluster_score.py`, and the public sections of
+`README.md` against the usual machine-generated tells — em-dash pileups,
+"robust/comprehensive/seamless/leverage/delve", repeated symmetric triplets,
+generic CTAs, "It's important to note", "not just X but Y". **None of those
+appear anywhere in this codebase.** `index.html` needed no changes at all. The
+six edits that were made are consistency and duplication defects, not voice
+defects.
+
+- **`.conf-badge::before` printed the word twice.** The stylesheet injected
+  `content: "Confidence "` in front of badge text that `renderOperator` already
+  builds as `"<level>-confidence cluster"`, so every operator header read
+  "Confidence high-confidence cluster". Verified live: the badge now renders
+  `low-confidence cluster` and the pseudo-element's computed content is `none`.
+
+- **Two hedges were printed twice inside a single panel.** The operator view's
+  bottom disclaimer and the audit disclosure's foot line both ended with the
+  identical sentence "Bulk LLC ownership data is not publicly available in NYS,
+  so this is the best inference the public data allows" — both visible at once
+  once the disclosure is expanded. The owner view had the same problem: the
+  single-owner sub-note and the bottom disclaimer both said properties held
+  under separately-named LLCs may appear separately. In both cases the sentence
+  was dropped from the *conditional* location and kept in the *always-rendered*
+  disclaimer, so no view lost the caution — confirmed by reading both panels
+  live.
+
+- **The same quantity had three names.** The dossier called it "Violations
+  all-time", the owner portfolio "Violations (sum)", the operator view
+  "All-time violations". Unified on the operator view's wording.
+
+- **Title case was inconsistent with the rest of the page.** Three of five
+  panel `<h2>`s were Title Case ("Property Dossier", "Owner Portfolio", "Top
+  Landlords") while every `<h3>`, the fourth `<h2>` ("Not in the current
+  dataset"), and the reopen button in `index.html` — which already said "Top
+  landlords" — were sentence case.
+
+- **One generated evidence string asserted an inference it elsewhere hedges.**
+  See DECISIONS for the reasoning; this is the only pipeline string that
+  changed, and it forced a `run.py --no-fetch` regeneration.
+
+- **README claimed something untrue about the page.** "The page title is a
+  question" has been in `README.md` since the initial commit (`b959d6b`), but
+  `<title>` and the `<h1>` have both always read "Buffalo Landlord Lookup".
+  Removed rather than rewritten — the two sentences before it already make the
+  point.
+
+### Visual spot-check: no regressions
+
+Scanned `style.css` and `app.js` for the markers the earlier audit cleared.
+Still exactly one gradient (the functional scroll-fade at `style.css:1164`),
+three `box-shadow` rules, no colour emoji, and — after this pass — no
+exclamation marks in any UI string. The glyphs in use (`✓ ✗ ✕ ⚠ ▴ ⓘ`) are
+typographic marks rather than emoji and render in the page's own ink.
+
 ## 2026-08-08 — owner search rides in the address index
 
 - **One file, two row kinds.** `address_index.json` now carries 93,069 address
