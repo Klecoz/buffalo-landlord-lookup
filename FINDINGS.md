@@ -3,7 +3,96 @@
 Facts about this system discovered while working on it — root causes, surprises,
 dead ends. Not a changelog; see git history for that.
 
-## 2026-08-08 — prose de-slop pass: the copy was already in voice
+## 2026-08-08 — Final polish (Item 10)
+
+### The pipeline emitted different bytes on every run
+
+Found while trying to prove the `emit()` refactor changed nothing. Two runs of
+*identical* code produced 106 differing `operators/*.json` files — same
+clusters, same membership, same totals, but a different
+`audit.cohesion.distinctive_token` and a different `evidence` sentence.
+
+`cohesion_details()` tallies tokens with `for t in set(_tokenize_for_stem(name))`.
+Python seeds string hashing per process, so that set iterates in a different
+order each run, and `Counter` records that order. The winner was then picked
+with `max(..., key=lambda kv: (kv[1], len(kv[0])))` — and `max` returns the
+*first* maximal item, so any cluster whose top tokens tied on both count and
+length was decided by hash order alone.
+
+`Zoll, Sean` / `Zoll Sean P` is the minimal case: `zoll` and `sean` each appear
+on 2 of 2 owners and are both four characters. Running `cohesion_details` under
+`PYTHONHASHSEED=0..7` returns `zoll` for some seeds and `sean` for others.
+
+Sorting the items before the `max` makes the tie-break alphabetical. After the
+fix, two full runs are byte-identical across all 67,277 emitted files, which is
+what made the refactor's no-op claim checkable at all. Nothing user-facing was
+wrong — the flapping token is one word inside an evidence string — but it meant
+no two deploys of the same data were ever the same bytes.
+
+### Dead code, with the evidence it was dead
+
+- `HOUSING_311_KEYWORDS` / `_is_housing_311` (`join.py`): the only reference to
+  the constant was inside the function, and the only reference to the function
+  was nowhere. The 311 housing filter had moved into the Socrata query; the
+  comment in `_join_311` already said "All rows are housing-related by API
+  filter; no client-side filter."
+- `oldest_violation` (`emit.py`): written into all 65,072 `owners/<slug>.json`
+  files, read by nothing in `web/`. Also misnamed — it is the *minimum across a
+  portfolio of each parcel's LAST violation date*, which is not the oldest
+  violation and not a quantity anyone asked for.
+- `.filter-pill` (`style.css`): five rule blocks, each pairing it with a live
+  `#panel .tabs button` selector. The app renders board tabs with `data-board`
+  plus `.active` and uses `aria-pressed` nowhere in either `index.html` or
+  `app.js`, so every `.filter-pill` branch was inert.
+
+The root `node_modules/` was not a stray `npm install` — there is no root
+`package.json`. It contained only `.vite/vitest/<hash>/results.json`, the
+vitest run cache, which lands at the repo root when vitest is invoked from
+outside `web/`.
+
+### Splitting emit() was worth it; splitting app.js still is not
+
+`emit()` (~350 lines) and `_build_operator_clusters()` (~260) were straight-line
+scripts whose phases were marked with banner comments. The phases turned out to
+be genuinely separable: each reads a handful of named values and produces one,
+so every extraction took explicit arguments and none needed a class, a context
+object, or a shared mutable accumulator. The one exception is
+`_attach_co_owner_links`, which mutates the cluster dicts in place because it
+cannot run until every cluster exists.
+
+The tell that this was a real seam and not a cosmetic one: the owner-slug loop
+inside `emit()` was byte-for-byte the body of the already-existing
+`_slugify_unique()`. Two copies of the same six lines had drifted apart in
+plain sight because they sat 300 lines from each other.
+
+### Final visual circuit: clean, with one minor stale-state left unfixed
+
+Ran `web/config.js` aside on a fresh port at 1440x900 and 390x844 against the
+freshly built `web/data/`. Leaderboards, owner portfolio, operator cluster with
+its audit disclosure, parcel dossier, address search, owner search ("INCT"
+returns INCT Holdings LLC and, correctly, Real Estate Of Distinction **Inc**),
+the map filter chip with its Clear control, sheet snaps, and the legend all
+behaved. The demolished dossier reads "Demolition permit issued 2009 — lot now
+assessed as vacant". No regressions.
+
+One pre-existing nit, logged rather than fixed because it is cosmetic and
+self-correcting: **a route change clears the search input but leaves the search
+dropdown open with stale rows.** Reachable without devtools — type a query,
+pick nothing, press Back:
+
+    before:    input "INCT", dropdown visible
+    after Back: input "",    dropdown STILL visible, 2 stale rows
+
+Picking a result closes the dropdown properly, so the common path is fine, and
+the stale list disappears on the next click or keystroke. Escape correctly
+clears both. Crossing the phone breakpoint mid-search is *also* fine — input and
+dropdown stay consistent — so this is specifically the route-render path not
+hiding `#search-results` when it clears `#search`.
+
+The only console error during the whole circuit was `404 /config.js`, which is
+the documented local-dev flow (README) and not present in a deployed build.
+
+## 2026-08-08 — Prose de-slop pass: the copy was already in voice (Item 9)
 
 Audited every user-facing literal in `web/index.html`, `web/app.js`,
 `pipeline/emit.py`, `pipeline/cluster_score.py`, and the public sections of
@@ -59,7 +148,7 @@ three `box-shadow` rules, no colour emoji, and — after this pass — no
 exclamation marks in any UI string. The glyphs in use (`✓ ✗ ✕ ⚠ ▴ ⓘ`) are
 typographic marks rather than emoji and render in the page's own ink.
 
-## 2026-08-08 — owner search rides in the address index
+## 2026-08-08 — Owner search rides in the address index (Item 8.5)
 
 - **One file, two row kinds.** `address_index.json` now carries 93,069 address
   rows followed by 65,072 owner rows (`{t:"o", name, slug, n}`). The file grew
@@ -86,44 +175,575 @@ typographic marks rather than emoji and render in the page's own ink.
 - `--no-fetch` regeneration is 44 seconds, not the tens of minutes a full run
   takes — the DOS enrichment reads its cached index and re-emits.
 
-## 2026-08-07 — planning audit (pre-implementation)
+## 2026-08-08 — Mobile UI pass (Item 8)
 
-- **"Demolished" is heavily over-flagged.** 8,342 of 93,069 parcels (~9% of the
-  city) carry `demolished=true`. The join (`pipeline/join.py::_join_demolitions`)
-  matches only the permit's normalized full address and ignores its `sbl` and
-  `issued` fields; permits span 2000–2026 (only ~460 since 2020), and a 2006
-  permit flags a parcel exactly like a 2026 one. Every flag adds +5 concern
-  score and the dark-red map color.
-- **The permit `sbl` field is a usable join key.** Right-padding it with zeros
-  to 20 chars matches a current parcel SBL for 8,549 of 10,661 permits that
-  carry one. The parcel layer also has corroboration fields: `PROP_CLASS`
-  (3xx = vacant land), `LAND_AV` vs `TOTAL_AV`, `YR_BLT`; assessment roll year
-  is 2025.
-- **The demolition permit feed itself lags** — the current pull contains only
-  2 permits dated 2026.
-- **Owner matching is exact-string end to end.** No fuzzy matching anywhere:
-  suffix canonicalization (`normalize_owner`), shared-mailing-address
-  clustering, token-cohesion scoring, person-name signature (frozenset of
-  first+last token). Known gap: `&` is stripped to a space while "and" is kept,
-  so "A&B LLC" and "A and B LLC" never merge.
-- **XSS is mostly covered** by `escapeHtml` (web/app.js:36), applied
-  consistently in HTML contexts. Residual weakness: entity escaping inside
-  inline `onclick="fn('${escapeHtml(x)}')"` JS-string contexts (app.js:101,
-  489, 674, 693, 1086, 1146, 1185) — the browser decodes entities before JS
-  parses the attribute, so escaping there is the wrong layer. The effective
-  defense is the emitter's slug alphabet, to be verified.
-- **The 311 feed is frozen upstream at 2024-05-10.** The pipeline correctly
-  anchors its "12-month" complaint window to the feed's own max date, not
-  wall-clock today — but any UI copy saying "last 12 months" is misleading.
-- **Web vitest suites mock `fetch`** (web/tests/setup.js), so regenerating
-  web/data does not break them; string-asserting tests do break when UI copy
-  changes.
-- **The visual layer has no AI-slop markers**: one functional gradient, no
-  emoji, three functional box-shadows, square corners, Hanken Grotesk + IBM
-  Plex Mono, reduced-motion respected. The de-slop pass is prose-focused.
-- Baseline `meta.json` (2026-05-10): parcels 93,069 · owners 65,089 · clusters
-  {high 1330, medium 855, low 19, dropped 4} · violations matched 220,068 ·
-  demolitions matched 8,342.
+### The filter chip ellipsised away its own dismiss control
+
+`#filter-chip` was one text run under `white-space: nowrap; overflow: hidden;
+text-overflow: ellipsis`, and "✕ Clear" was the last thing in it. Owner labels
+run long — "INCT Holdings LLC (+11 more LLCs) · 312 parcels" is 336px of
+content in a 336px chip at 360px wide — so the ellipsis always landed before
+the Clear, which measured at `left: 403` on a 360px screen. The chip still
+cleared the filter when tapped anywhere, so the filter was escapable; what was
+missing was any sign that it could be.
+
+### Three pieces of map furniture were stacked in the same 44px
+
+At phone peek the sheet occupies 0–120px, the colophon is pinned at
+`bottom: 132px` and the legend at `bottom: 168px`. The filter chip is also
+`bottom: calc(120px + 12px)` — the same slot as the colophon, which it covered
+outright, and 8px into the legend above it. The collision only appears with a
+map filter active, which is why the 168px legend offset verified clean when it
+was set.
+
+### The masthead date wrapped into the search bar below 380px
+
+`Public records · Buffalo, N.Y. · refreshed 2026-08-08` is ~345px of IBM Plex
+Mono at 10.5px. At 390px it fits the 362px content box with 17px to spare; at
+360px the box is 332px and the line wraps to 30px tall, spanning y 40–71.
+`#search-row` starts at y 62 with an opaque `var(--paper)` background, so the
+second row was half-covered and read as a stray "08" under the title.
+
+### The "Open" pill on phones was never visible in either state that showed it
+
+`#reopen-panel` is `bottom: 8px` at `z-index: 25`; `#panel` is `z-index: 30`
+and reaches `bottom: 0` at 120px (peek) or 60px (`.hidden`). The pill's box
+(807–836 on an 844px screen) falls inside the sheet in both cases —
+`elementFromPoint` at its centre returned the panel's content, not the button.
+The CSS force-shows it at peek and the JS relabels it "▴ Open" on every snap
+to peek, so both halves were maintaining a control nobody could see.
+
+### Board pills were 36px on phones because an id selector outranked the fix
+
+The phone block sets `.tabs button { min-height: 44px }` (specificity 0-1-1).
+The desktop pill treatment added in the previous pass is written
+`#panel .tabs button` (1-1-1) with `min-height: 36px`, and cascade order does
+not enter into it — the id wins at every viewport. Measured 60×36 at 390px
+while the sibling `.kind-toggle button` next to it measured 83×44.
+
+### The 481–880px band ellipsised every board label to nonsense
+
+The horizontal-scroll treatment for the five board pills is scoped to ≤480px.
+Between 481 and 880 the base `.tabs button { flex: 1 }` splits a 316px row
+five ways, and the labels truncate to "Op…", "Pr…", "Val…". The kind toggle
+above it fails the same way with the long-form labels the same band selects:
+"Operators (mailing-address clusters)" in a 158px tab renders as
+"Operators (mailing-addr…". Both are load-bearing labels, not decoration.
+
+### At tablet the filter chip ran under the side panel and over the legend
+
+`#filter-chip { bottom: 86px; left: 18px; right: 18px }` spans the full width,
+but the panel occupies the right 360px at `z-index: 30` — so the chip's right
+end, "✕ Clear" included, was covered. At the bottom it also overlapped the
+legend, which sits at `bottom: 44px` and stands ~75px tall in this band.
+
+### Tab labels were chosen at render time and stranded by rotation
+
+`renderLeaderboards` picks between a short label with an ⓘ button and the
+spelled-out label by testing `matchMedia("(max-width: 480px)")` when it runs.
+Nothing re-rendered on resize, so a phone rotated to landscape kept the short
+labels — and `.info-btn` is `display: none` above 480px, so the explanation
+those labels depend on became unreachable. Rotating the other way stranded the
+long labels in the narrow sheet.
+
+### Verified sound: snap targets, tap-to-cycle, and drag past both ends
+
+Driving synthetic pointer events on the handle at 360×740: tap cycles
+peek→half→full→peek correctly from all three states; a drag 600px past the top
+clamps at `innerHeight` and snaps to full; a 700px drag down from full lands
+the panel at the 80px floor and snaps to peek. The one gap is velocity — a
+60px flick up from peek snaps back to peek, because `endDrag` only measures
+final position. Left alone; velocity tracking is the gesture-logic change this
+pass was scoped out of.
+
+### The stacked portfolio card labelled its own heading
+
+The mobile card treatment turns each `<td>` into a labelled row via
+`data-label` and `::before`, and styles `td:first-child` as a full-width bold
+title with a rule under it. Both applied to the address cell, so the card's
+heading read "Address  293 Ontario St" — the label restating what the
+treatment above it already established. The remaining three cells do need
+their labels; only the first one is self-evident.
+
+### The info tip only knew how to hang below its button
+
+`showInfoTip` clamped `left` (`Math.min(rect.left, innerWidth - 220)`, against
+a hard-coded 220px width) and did not clamp `top` at all. A button low in the
+viewport put the tip past the bottom edge — reproduced by pinning an ⓘ at
+`innerHeight - 30`, which placed a 113px tip at y 818–931 on an 844px screen.
+It is appended to `<body>`, so nothing clips it back into view.
+
+Separately, the tip is positioned once against the viewport and then left
+alone. Scrolling the panel or resizing the window slid its button out from
+under it, stranding an explanation over unrelated content — after a resize
+from 768 to 390 it was still sitting over the map.
+
+### Checked and sound: search dropdown, safe areas, deep links
+
+The search listbox is `max-height: 40vh` below a row ending at y 114 — 452px
+bottom edge on an 844px screen, 410px on a 740px one, both clear of the
+~300–340px an iOS keyboard takes. `#search` is `font-size: 16px`, so iOS will
+not auto-zoom the field. A cold deep link to `#/parcel/<id>` lands the sheet at
+half with the dossier readable.
+
+`env(safe-area-inset-*)` is inert here: `index.html` has no `viewport-fit=cover`,
+so the page is letterboxed into the safe area and nothing can fall under a
+notch or home indicator. The `max(38px, env(safe-area-inset-top, 12px))` on
+`sheet-full` resolves to its 38px floor. Opting into edge-to-edge would mean
+re-testing every fixed-position edge element on hardware; the letterboxed
+default is correct as it stands.
+
+## 2026-08-08 — Desktop UI pass (Item 7)
+
+### The map legend was mixing a scale with a category
+
+`.legend-ticks` was a 120px flex row holding four labels — `none`, `5+`,
+`11+`, `demolished` — set to `justify-content: space-between`. Their combined
+text runs ~148px, so the row overflowed, `space-between` had no free space to
+distribute, and the labels butted together reading as one string:
+"none 5+ 11+ demolished". None of them sat under the swatch it named.
+
+Two separate problems underneath. The ramp has five swatches but only four
+labels, so the `1+` bucket (concern score 1-4) was never named. And `s4` is
+not a fifth step of a sequential scale — it is a categorical state, which is
+why its label was the one that would not fit. Splitting the categorical
+swatch onto its own row leaves four buckets over four 34px columns, each with
+room for its own tick.
+
+### Numeric table headers never got the alignment their cells had
+
+`table.portfolio thead th` set `text-align: left`; `td.num` set
+`text-align: right`. There was no `th.num` rule, so every header sat at the
+left edge of a column whose values were flushed right — measured at 1440px,
+the `Open` header started at x=1167 with its value right-aligned across an
+84px column. Most visible on single-row portfolios, where one header and one
+number sat 60px apart with nothing between them.
+
+### The audit list had three different value-column positions
+
+`.audit-key` used `min-width: 7em` on an inline-block. A min-width only holds
+while the content is shorter than it: `SHARED MAILING ADDRESS` renders about
+14em at 10.5px mono, so it pushed its own value right while `COHESION` and
+`MEMBER` values started at two further positions. Measured x=1029 / 986 / 979
+on one operator. Fixing it in CSS alone was not possible because the value
+had no element of its own — the rows now emit `<span class="audit-val">`.
+
+Separately, a 16-LLC operator printed the key `MEMBER` sixteen times down the
+left column. The repeats are still in the DOM (screen readers and the tests
+read them); CSS hides the duplicate ink via `[data-key-repeat]`.
+
+### Every row that acts like a link was mouse-only
+
+`.leaderboard li`, `.leaderboard.llc-list li`, `table.portfolio tbody tr` and
+`#search-results li` all carried click listeners and none carried `tabindex`.
+Enumerating the document's focusables at 1440px returned the search field, the
+MapLibre controls, the filter chip and the panel's buttons — not one row. The
+whole leaderboard, every portfolio table and the address dropdown were
+unreachable without a mouse.
+
+`style.css` already had a `.leaderboard li:focus-visible` rule and a
+`#search-results li.active` rule. Both were dead: nothing could focus an `li`,
+and nothing ever set `.active`. The styling for keyboard search had been
+written and never wired.
+
+### Focus rings were Chrome blue on eleven of thirteen focusable elements
+
+The `:focus-visible` block covered `#filter-chip`, `.tabs button`,
+`.kind-toggle button` and `.leaderboard li` (the last of which could not be
+focused). Everything else — panel close and collapse, Copy link, Download CSV,
+the CTAs, the dossier filter chips, the audit disclosure, the map controls —
+fell through to the user-agent ring. Confirmed by tabbing to `#panel-close`
+and reading `outline: rgb(0, 95, 204) auto 1px`.
+
+### The panel's only exit scrolls away
+
+`#panel-close` and `#panel-collapse` are absolutely positioned inside `#panel`,
+which is itself the scroll container (measured 2141px of content in an 868px
+viewport on a 21-violation dossier). Read to the bottom and there is no
+control on screen to leave the view. There was no Escape handler either — the
+only one in the file dismisses the leaderboard info tip.
+
+Making the buttons sticky would have fought `#panel`'s `translateX` slide, so
+Escape carries this instead; it delegates to the existing `#panel-close`
+click handler and therefore inherits its route-aware behaviour (back to the
+leaderboards from a record, collapse to the rail from the leaderboards).
+
+### The dossier was the one view without a Copy link
+
+`_panelHeadActionsHtml` was called from the portfolio, operator and
+leaderboard renders; `renderDossier` emitted a bare `<h2>`. Parcel deep links
+(`#/parcel/<id>`) work, so the one view a reader is most likely to want to
+send someone was the one with no way to get the link out of it. Verified after
+the fix that the button copies the parcel route, not the page root.
+
+### Signal red was paid out on boards where nothing was wrong
+
+`.leaderboard li.top1 .stat-num { color: var(--signal) }` applied to whichever
+board was showing. On the Value board that painted HARBORcenter Development's
+$73.3M in the alarm red — an entity with 8 open violations across 2 parcels,
+top of the list purely for owning expensive land. Red means concern in every
+other place it appears on this page, including the map ramp two inches away.
+
+The boards now declare whether their leading number counts something wrong
+(`concern: true` on open violations, all violations, 311) and only those get
+the accent.
+
+### Seven filter chips never fit one panel row
+
+`Status:` + 3 chips + `When:` + 4 chips is roughly 560px of content in a 468px
+column, so the row always wrapped — and because label and chips were flat
+siblings in one flex container, it wrapped mid-group. "Last 90d" and "Last
+30d" landed on a second line directly under the Status label, reading as two
+more status options. Wrapping each label with its own chips fixes the break
+point without changing what wraps.
+
+## 2026-08-08 — Web bug hunt (Item 6)
+
+### Deep links to a parcel never resolved
+
+`selectParcel` read a parcel's properties from `map.querySourceFeatures`,
+which only returns features from tiles already loaded *in the current
+viewport*. `selectParcel` writes `#/parcel/:id` into the address bar on every
+map click, so that URL is what anyone copies, bookmarks, or reloads — and
+opened cold it lands on the default city-wide view, matches nothing, and
+rendered "Couldn't load that parcel — try zooming in and clicking again".
+Every shared or reloaded dossier link was broken, and the message blamed the
+reader's zoom level for a lookup problem.
+
+(The dossier is also the one view with no "Copy link" button — the three
+`_panelHeadActionsHtml` call sites are portfolio, operator, and leaderboards.
+Now that parcel URLs resolve, that gap is worth closing in the desktop pass.)
+
+The address index already carries a centroid for all 93,069 parcels, so the
+parcel can be found by jumping the camera there and re-querying once the map
+goes idle. The wait has a 5s ceiling — a wedged tile request must not hang a
+route forever.
+
+Reaching the not-found branch now means the id is in neither the rendered
+source nor the address index, which is a genuinely unknown parcel.
+
+### A stray "%" in the URL threw an uncaught URIError
+
+`applyHashRoute` fed raw hash segments to `decodeURIComponent`, so
+`#/owner/%E0%A4%A` (a truncated escape, easy to produce by hand-editing or by
+a link that got cut) threw `URIError: URI malformed` out of the hashchange
+handler. The panel kept whatever the previous route had rendered, so the URL
+and the panel disagreed with no visible error.
+
+### Stale bookmarks read as a network hiccup
+
+Owner and operator slugs are rebuilt from owner names on every refresh, so
+links from before a refresh 404 — a known consequence of the pipeline, not a
+transient failure. Both loaders reported "Couldn't load that owner's
+portfolio", which invites a pointless retry. A 404 is now separated from a
+transport failure and says the record isn't in the current dataset.
+
+### Back to a parcel route left the panel on the owner view
+
+`state.selectedId` stayed set while an owner or operator view was open, and
+`applyHashRoute` skips `selectParcel` when the routed id already matches it.
+Going parcel → owner → Back therefore restored the `#/parcel/` URL while the
+panel still showed the portfolio. Both loaders now release the selection.
+
+### A slow owner fetch could clobber a newer operator view
+
+`openPortfolio` and `openOperator` awaited a fetch with no guard, so on a slow
+connection the *earlier* request could resolve last and repaint the panel,
+null out `state.lastOperator`, and rewrite the URL back to its own route.
+Reproduced by delaying `/owners/` by 700ms and navigating owner → operator.
+
+`selectParcel` already captured a token (`_selectParcelToken`) but never
+compared it after awaiting — the guard was dead code. One module-level
+`_viewToken` now covers all three views and is compared at every resume
+point.
+
+### The leaderboard info tooltip leaked two document listeners per render
+
+`renderLeaderboards` registered document-level `click` and `keydown` handlers
+inside its per-button loop, and it re-runs on every tab and kind switch. Ten
+switches on a phone added 40 document listeners, each closing over a button
+already detached from the DOM. The dismissal handlers are now registered once
+at bootstrap; only the per-button click handler is re-bound per render.
+
+### On phones, the button labelled "Open" did not open anything
+
+Closing the sheet collapses it to `sheet-peek`, which is the state where CSS
+reveals the reopen pill. Tapping it called `renderLeaderboards`, and
+`showPanel` leaves an existing snap class alone — so the sheet stayed at
+120px and the pill stayed put. The handler now lifts the sheet to half on
+phones.
+
+### 311 copy implied data that doesn't exist
+
+The dossier's empty state read "No housing-related 311 complaints in the last
+18 months". Two things were wrong: the pipeline's window is 12 months, not
+18, and the dossier's complaint list isn't windowed at all — `_join_311`
+appends every matched complaint and only the `complaints_311_12mo` *counter*
+is gated by the cutoff. The empty state now says "on record".
+
+The counter tiles said "311 housing 12mo" and "311 (12mo)", which reads as
+the last 12 months from today. The window ends at the feed's max date
+(2024-05-10, frozen upstream), so the tiles now carry that anchor, derived
+from `meta.complaints_311_max_date` rather than hardcoded.
+
+### Inline onclick handlers — audit result
+
+Seven templates interpolated a value into an `onclick="fn('…')"` string. The
+values were slugs (`[a-z0-9-]`, pinned by pipeline tests), parcel ids, or the
+literals `"portfolio"`/`"operator"` — so none were exploitable, and the
+`scope` argument at the old line 101 traces to two hardcoded call sites in
+`_panelHeadActionsHtml`, not to data.
+
+The parcel id is the one value with no pipeline-level guarantee: it is copied
+straight from the assessment roll's SBL field. It happens to be strictly
+alphanumeric across all 93,069 parcels today, but nothing enforces that, and
+`escapeHtml` is the wrong layer inside a JS-string context anyway — the
+browser decodes entities before the JS parser runs. All seven sites now carry
+their argument in a `data-*` attribute.
+
+### Suspects that came back clean
+
+- **Search never builds a RegExp** — matching is `String.includes` on an
+  uppercased query, so `.*` and `([a-z]+)?$` are literal. Empty, sub-3-char,
+  5,000-char, and no-match queries all behave. Arrow-key result navigation
+  isn't implemented (a gap for Item 8, not a bug).
+- **CSV quoting** is RFC 4180-correct, and unreachable in practice: the export
+  carries addresses, and no address in the dataset contains a comma, quote, or
+  newline. Owner names that do (`Holcomb, Clinton`) never enter the CSV body —
+  only the filename, via the slug.
+- **Bottom-sheet drag** clamps to [80px, viewport height] at both extremes and
+  snaps to the nearest of peek/half/full; a tap under 6px cycles states.
+- **Rotating to landscape** drops below the 480px phone breakpoint, so the
+  sheet reverts to the desktop side panel and the leftover snap class goes
+  inert. No horizontal overflow at 844×390.
+- **Unknown routes and `#/parcel/` with no id** already fell through to the
+  leaderboards.
+- `demoPermit`'s string/object dual handling is still required — untouched.
+
+### Local dev silently tests production data
+
+`web/config.js` is gitignored and sets `DATA_BASE` to the deployed R2 bucket,
+and `index.html` swallows its load error. A local `python -m http.server`
+therefore serves the local `index.html`/`app.js` against **live R2 data**,
+which during this effort was still the May build. Move it aside to exercise
+`web/data/`. Browser caching of `config.js` survives the file being removed —
+use a fresh port.
+
+### Sheet drag could strand itself if the pointer vanished
+
+`setPointerCapture` throws `NotFoundError` when the pointer id is no longer
+active. It ran before the drag state was consistent, so the throw left
+`dragging = true`, the `dragging` class applied, and the CSS transition
+disabled — a sheet that no longer responds to the handle. The matching
+`releasePointerCapture` was already wrapped for the same reason.
+
+Only reproduced with synthetic `PointerEvent`s (`dispatchEvent` supplies no
+active pointer), so this is defensive rather than an observed field failure.
+
+## 2026-08-08 — Dataset refresh (Item 5)
+
+Full canonical run (fetch → NYS DOS refresh → join → emit) with all Item 2–4
+fixes in place, 1,214s end to end. `web/data/` is not versioned, so the counts
+live here:
+
+- parcels 93,069 (May: 93,069) · owners 65,072 (May: 65,089)
+- violations 250,586 total, **247,696 matched (98.8%)** — May matched 220,068;
+  the jump is Item 4's SBL fallback + ordered paging recovering rows that were
+  always in the source, plus ~3 months of new data
+  (`code_violations_max_date` 2026-07-24)
+- 311 max date **2024-05-10 — still frozen upstream, as expected**
+- demolitions 10,822 permits → 8,979 matched → **6,720 parcels demolished**
+  (2,020 more hold a permit over a still-standing building);
+  `demolitions_max_date` 2026-07-13
+- clusters 2,200: high 1,318 · medium 846 · low 36 · dropped 4
+  (May: 1,330/855/19/4 — shifts match the Item 2 fix projections)
+- NYS DOS index rebuilt with ordered paging, `nys_dos_max_date` 2026-08-06;
+  26 clusters now flagged at registered-agent addresses
+- orphaned owner/operator JSON purged (output dirs cleared before emit);
+  exactly 65,072 owner + 2,200 operator files remain
+
+Top-10 leaderboards vs the live May site are stable — same operators, counts
+up modestly. Only churn in the open-violations board: SRE Management LLC
+dropped out of the top 10, Sokolov 94 LLC entered.
+
+NOT deployed — deploy is a single atomic step at the end of the effort
+(frontend schema changes must ship with this data).
+
+## 2026-08-07 — Pipeline bug hunt (Item 4)
+
+- **Socrata paging without `$order` silently dropped 8,956 code violations
+  (3.6%) from today's pull.** `fetch.py::_socrata` requested `$limit`/`$offset`
+  windows with no `$order`. SODA gives an unordered query no stable row order,
+  so consecutive windows get sliced out of differently-sorted result sets: the
+  total row count comes out exactly right (250,586, matching
+  `select count(1)` on the server) while 8,956 distinct `uniquekey`s are absent
+  and 8,956 other rows appear twice. The exact-duplicate row count and the
+  missing-key count matching at 8,956 is the fingerprint. Verified by pulling
+  all 250,586 `uniquekey`s from the server *with* `$order=:id` and diffing
+  against the local file. The 311 (4 pages) and demolition (1 page) pulls
+  happened to come through intact — it is luck, not a property of those
+  datasets. Fixed by sending `$order=:id` on every page.
+- **ArcGIS paging advanced the offset by the page size it asked for, not the
+  page size it got.** `resultRecordCount` is a ceiling: a server is free to
+  return fewer rows and set `exceededTransferLimit`, and every row in the
+  shortfall would have been skipped. Latent, not triggered: the NYS
+  Clearinghouse layer reports `maxRecordCount: 50000`, well above the
+  ARC_PAGE=1000 we request, so it returns full pages. Today's parcel pull is
+  complete — `returnCountOnly` on the live service reports exactly 93,440
+  features for `MUNI_NAME='Buffalo'`, matching `raw/parcels.geojson`.
+- **The code-violation SBL fallback was documented but never implemented.**
+  `join.py`'s module docstring has always described the violations join as "by
+  normalized address (then SBL fallback)"; `_join_violations` only ever tried
+  the address. 228,379 of 250,586 violations carry a usable 16-char `sbl`, and
+  on the 2026-08-07 pull the fallback recovers 18,589 of the 21,460 rows the
+  address join misses — 7.4% of the whole feed, previously absent from every
+  owner's portfolio and concern score. Only 73 of 229,126 address matches
+  disagree with the row's SBL, so address-first/SBL-second is safe; only 2,871
+  violations now match nothing at all.
+- **SBL matching is shared between the violations and demolitions joins**
+  (`_sbl_lookup`). Source feeds carry the 16-char base SBL; the parcel roll
+  carries base+4-digit sub-parcel suffix for 93,079 parcels and the bare
+  16-char form for 354, so both spellings are tried. Values under 16 chars are
+  truncated junk (16,131 violations have a 5-char `sbl`) and are rejected —
+  padding them would manufacture matches.
+- **17-char SBLs never match, and are left that way.** 252 violations and 22
+  demolition permits carry a 16-char base plus a trailing letter
+  (`1114300011003000A`) — a sub-parcel designation the roll doesn't use.
+  Truncating to `[:16]` and padding would match a real parcel for about half
+  of them, but that collapses a sub-parcel onto its base parcel on a guess, so
+  it isn't done.
+- **Every map pin sat off-centre because the centroid averaged the ring's
+  closing vertex twice.** GeoJSON repeats a polygon's first vertex to close
+  the ring, and `_build_parcel_records` took a plain mean over the raw vertex
+  list — so the duplicated corner got double weight, pulling the pin toward it
+  by roughly a fifth of the way on a four-corner lot. All 93,440 parcel
+  geometries have closed rings, so all of them were affected: median
+  correction 2.5m, p99 6.3m, max 34.8m. Small next to a city block, but
+  systematic and free to fix.
+- **`--no-fetch` against an empty cache died on a bare `FileNotFoundError`**
+  raised from inside `join_all`, naming one file and offering no way forward.
+  It now preflights all four raw inputs, lists every missing one, and points
+  at the command that produces them.
+- **An unreadable NYS DOS cache aborted the whole pipeline run.**
+  `fetch_and_build_index` treated a fresh-by-mtime file as readable and let
+  `json.load`'s `JSONDecodeError` (or a `KeyError` on `payload["index"]` for
+  an older payload shape) escape. A truncated cache is exactly what an
+  interrupted write leaves behind, and the file is derived data, so it now
+  warns and re-fetches. Clock skew is not treated as an error: a cache with a
+  future mtime reads as fresh, which is the harmless direction — the next
+  scheduled refresh corrects it, and `--force-dos-refresh` overrides.
+- **The per-owner violation-type tally was computed from the trimmed dossier
+  list, not the full violation set.** `join_all` trims each parcel's
+  `violations` to the 25 most recent to bound JSON size, and emit's
+  `violation_type_counts` looped over that trimmed list — so 13,333 of 247,715
+  matched violations (5.4%) never reached the tally. The loss is not spread
+  evenly: it falls entirely on the 1,269 parcels with more than 25 violations
+  (up to 241 on one), which are precisely the parcels behind the leaderboard
+  entries the tally annotates, and it always drops the *oldest* rows. Now
+  tallied in `_join_violations` as the rows go by, before the trim.
+- **An over-long owner name would have aborted the entire emit.** A slug is a
+  filename and every filesystem we target caps a name at 255 bytes; `_slugify`
+  applied no cap, so one long name would raise `ENAMETOOLONG` partway through
+  writing 65k owner portfolios, leaving `web/data/` half-written. Not
+  reachable from the current source — the assessment roll truncates owner
+  names at 30 characters, and the longest real slug is 46 — but the input is
+  third-party data and the failure is total, so slugs are now capped at 120
+  characters. Collisions the cap could introduce go through the same dedup as
+  every other collision.
+- **A malformed permit date would have scored as recent.** Both the
+  "latest permit wins" pick and the `DEMO_SCORE_YEARS` recency gate order
+  `issued` as a plain string, and any non-ISO value sorts above every real
+  date (`"not-a-date" > "2021-08-07"`), so it would have won the +5 concern
+  bonus. Today's feed is clean — all 10,822 permits parse as `YYYY-MM-DD`,
+  spanning 2000-01-03 to 2026-07-13 with none empty and none in the future —
+  so this was latent. Malformed values are now blanked at the join and the
+  gate checks the shape before trusting the comparison.
+
+### Suspects cleared
+
+- **THE SLUG ALPHABET IS SAFE.** `_slugify` emits strictly `[a-z0-9-]` for
+  *any* input, by construction: `re.sub(r"[^a-z0-9]+", "-", name.lower())`
+  replaces every character outside the class, the only other character it can
+  introduce is the hyphen, and the `or "unknown"` fallback rules out empty.
+  Verified against all 65,074 real `owner_norm` values (which produce owner
+  slugs) and all 67,455 raw `PRIMARY_OWNER` values (which produce operator
+  labels): zero characters outside the alphabet in either set. Also verified
+  against adversarial inputs — quote-and-script-tag injections, path
+  traversal, NUL and newline, Greek, Cyrillic, an RTL override, a dotted
+  capital I (whose `.lower()` yields a combining mark), and emoji.
+  **Item 6 may rely on this: a slug interpolated into an inline `onclick`
+  cannot carry a quote, angle bracket, backslash, or whitespace.** The
+  guarantee is now pinned by tests at both `_slugify` and `emit()` output.
+- **Slug collisions are possible but cannot silently overwrite.** Distinct
+  names really can collapse to one slug — accents are the cheapest case
+  (`josé` and `josë` both give `jos`), and 2,133 groups of raw owner names
+  collide, though almost all are punctuation variants of one entity
+  ("Klopman Ventures Inc." / "Klopman Ventures, Inc."). Both the owner path
+  (`emit()`) and the operator path (`_slugify_unique`) already resolve them
+  with a `-2`, `-3` suffix, and the loop re-checks each candidate so a suffix
+  can't steal a slug a real name would have earned. Across the 65,074 real
+  `owner_norm` values there are **zero** collisions, so no suffix is currently
+  in play. The assignment order follows the parcel feed's order, which is
+  stable for a given `parcels.geojson` but not pinned across refetches
+  (the ArcGIS query sends no `orderByFields`) — moot while collisions are zero.
+- **The 12-month 311 window is correct, including the leap-day branch.** The
+  window is anchored on the dataset's max `open_date` (frozen at 2024-05-10,
+  since the feed stopped updating) rather than today. `anchor.replace(year=...)`
+  raises only for a Feb-29 anchor, so the `day=28` fallback fires only then;
+  every other date takes the plain path and lands on the same calendar day a
+  year earlier. The boundary is inclusive.
+- **Per-parcel violation and complaint counts are taken before the trim to
+  25.** The counters increment inside the join loops; `join_all` trims the
+  dossier lists afterwards. Confirmed by test. (The type *tally* was the
+  exception — see the fix above.)
+- **Address-index collisions are deterministic and order-independent.** An
+  exact normalized address always beats another parcel's no-street-type
+  alias regardless of arrival order, because the alias is only written when
+  the key is free while the exact key overwrites. Genuinely identical
+  addresses (condos) are last-write-wins — arbitrary, but fixed for a given
+  input file.
+- **Socrata paging handles a row count that is an exact multiple of
+  PAGE_SIZE.** The extra request returns zero rows and terminates; no loop,
+  no lost tail. The 311 `$where` needs no escaping — neither `DPIS` nor
+  `Buffalo Municipal Housing Authority` contains an apostrophe, and `requests`
+  URL-encodes the clause. A literal containing one would need doubling.
+- **Atomic writes do protect the prior cache.** A failed write leaves the
+  previous file byte-for-byte intact and removes the `.tmp` sibling, so a
+  broken refetch can't strand a `--no-fetch` run.
+- **`_join_311`'s dead client-side filter.** `HOUSING_311_KEYWORDS` and
+  `_is_housing_311` are unreferenced — the subject filter moved server-side
+  into the `$where`. All 195,004 rows are DPIS (191,728) or BMHA (3,276).
+  Left in place; removing dead code is Item 10's call, not a correctness fix.
+- **`oldest_violation` is a misnomer, and unused.** It is the *minimum* of
+  each parcel's *latest* violation date across the owner's portfolio, which
+  is not "the owner's oldest violation". It is emitted in every owner file
+  and read by nothing in `web/`.
+- **Coordinate precision is not rounded anywhere.** `properties.geojson`
+  ships full float geometry straight from ArcGIS, which is most of its 65MB.
+  A correctness non-issue; flagged as payload weight for whoever owns the
+  emit-size question.
+- **`web/data/owners/` accumulates orphans across runs.** emit writes files
+  but never removes ones the current run didn't produce, so slugs from an
+  older normalization survive. Today's run leaves 72 orphan owner files and 7
+  orphan operator files (~45KB) — all from before the Item-2 change that drops
+  "and" from `owner_norm` (`adam-mickiewicz-library-and`,
+  `andrews-robert-i-and`, …). Harmless to the frontend, which only requests
+  slugs named in `properties.geojson`, but they do get uploaded on deploy.
+  Left alone here: pruning the directory is an emit change a later item owns.
+- **`fetch.py` has no retry.** Timeouts are generous (180s Socrata, 240s
+  ArcGIS) but a single transient failure aborts the whole fetch. The atomic
+  writes mean the previous cache survives intact, so the recovery is just
+  re-running — noted as a robustness gap, not a correctness bug.
+- **The ArcGIS query sends no `orderByFields`.** The layer reports
+  `supportsPagination: true` and returned exactly the 93,440 features
+  `returnCountOnly` promises, so paging is stable in practice. Unlike SODA,
+  ArcGIS orders by the OID field by default when paginating. Left as is; the
+  consequence if it ever drifts is a reshuffled parcel feed, which only
+  matters for slug-collision tie-breaks (currently zero).
+- **`parcel_id` is unique across all 93,069 parcel records** (0 duplicates, 0
+  empty), so `emit`'s `by_id` map can't drop a parcel or double-count one into
+  an owner's aggregate. The 20-char SBL is unique across all 93,440 raw
+  features too.
 
 ## 2026-08-07 — Demolished redesign, measured (Item 3)
 
@@ -303,570 +923,41 @@ applied at the next full run.
   Properties of Bflo.In". These split at the owner level and are re-joined
   only by the operator layer.
 
-## 2026-08-07 — Pipeline bug hunt (Item 4)
-
-- **Socrata paging without `$order` silently dropped 8,956 code violations
-  (3.6%) from today's pull.** `fetch.py::_socrata` requested `$limit`/`$offset`
-  windows with no `$order`. SODA gives an unordered query no stable row order,
-  so consecutive windows get sliced out of differently-sorted result sets: the
-  total row count comes out exactly right (250,586, matching
-  `select count(1)` on the server) while 8,956 distinct `uniquekey`s are absent
-  and 8,956 other rows appear twice. The exact-duplicate row count and the
-  missing-key count matching at 8,956 is the fingerprint. Verified by pulling
-  all 250,586 `uniquekey`s from the server *with* `$order=:id` and diffing
-  against the local file. The 311 (4 pages) and demolition (1 page) pulls
-  happened to come through intact — it is luck, not a property of those
-  datasets. Fixed by sending `$order=:id` on every page.
-- **ArcGIS paging advanced the offset by the page size it asked for, not the
-  page size it got.** `resultRecordCount` is a ceiling: a server is free to
-  return fewer rows and set `exceededTransferLimit`, and every row in the
-  shortfall would have been skipped. Latent, not triggered: the NYS
-  Clearinghouse layer reports `maxRecordCount: 50000`, well above the
-  ARC_PAGE=1000 we request, so it returns full pages. Today's parcel pull is
-  complete — `returnCountOnly` on the live service reports exactly 93,440
-  features for `MUNI_NAME='Buffalo'`, matching `raw/parcels.geojson`.
-- **The code-violation SBL fallback was documented but never implemented.**
-  `join.py`'s module docstring has always described the violations join as "by
-  normalized address (then SBL fallback)"; `_join_violations` only ever tried
-  the address. 228,379 of 250,586 violations carry a usable 16-char `sbl`, and
-  on the 2026-08-07 pull the fallback recovers 18,589 of the 21,460 rows the
-  address join misses — 7.4% of the whole feed, previously absent from every
-  owner's portfolio and concern score. Only 73 of 229,126 address matches
-  disagree with the row's SBL, so address-first/SBL-second is safe; only 2,871
-  violations now match nothing at all.
-- **SBL matching is shared between the violations and demolitions joins**
-  (`_sbl_lookup`). Source feeds carry the 16-char base SBL; the parcel roll
-  carries base+4-digit sub-parcel suffix for 93,079 parcels and the bare
-  16-char form for 354, so both spellings are tried. Values under 16 chars are
-  truncated junk (16,131 violations have a 5-char `sbl`) and are rejected —
-  padding them would manufacture matches.
-- **17-char SBLs never match, and are left that way.** 252 violations and 22
-  demolition permits carry a 16-char base plus a trailing letter
-  (`1114300011003000A`) — a sub-parcel designation the roll doesn't use.
-  Truncating to `[:16]` and padding would match a real parcel for about half
-  of them, but that collapses a sub-parcel onto its base parcel on a guess, so
-  it isn't done.
-- **Every map pin sat off-centre because the centroid averaged the ring's
-  closing vertex twice.** GeoJSON repeats a polygon's first vertex to close
-  the ring, and `_build_parcel_records` took a plain mean over the raw vertex
-  list — so the duplicated corner got double weight, pulling the pin toward it
-  by roughly a fifth of the way on a four-corner lot. All 93,440 parcel
-  geometries have closed rings, so all of them were affected: median
-  correction 2.5m, p99 6.3m, max 34.8m. Small next to a city block, but
-  systematic and free to fix.
-- **`--no-fetch` against an empty cache died on a bare `FileNotFoundError`**
-  raised from inside `join_all`, naming one file and offering no way forward.
-  It now preflights all four raw inputs, lists every missing one, and points
-  at the command that produces them.
-- **An unreadable NYS DOS cache aborted the whole pipeline run.**
-  `fetch_and_build_index` treated a fresh-by-mtime file as readable and let
-  `json.load`'s `JSONDecodeError` (or a `KeyError` on `payload["index"]` for
-  an older payload shape) escape. A truncated cache is exactly what an
-  interrupted write leaves behind, and the file is derived data, so it now
-  warns and re-fetches. Clock skew is not treated as an error: a cache with a
-  future mtime reads as fresh, which is the harmless direction — the next
-  scheduled refresh corrects it, and `--force-dos-refresh` overrides.
-- **The per-owner violation-type tally was computed from the trimmed dossier
-  list, not the full violation set.** `join_all` trims each parcel's
-  `violations` to the 25 most recent to bound JSON size, and emit's
-  `violation_type_counts` looped over that trimmed list — so 13,333 of 247,715
-  matched violations (5.4%) never reached the tally. The loss is not spread
-  evenly: it falls entirely on the 1,269 parcels with more than 25 violations
-  (up to 241 on one), which are precisely the parcels behind the leaderboard
-  entries the tally annotates, and it always drops the *oldest* rows. Now
-  tallied in `_join_violations` as the rows go by, before the trim.
-- **An over-long owner name would have aborted the entire emit.** A slug is a
-  filename and every filesystem we target caps a name at 255 bytes; `_slugify`
-  applied no cap, so one long name would raise `ENAMETOOLONG` partway through
-  writing 65k owner portfolios, leaving `web/data/` half-written. Not
-  reachable from the current source — the assessment roll truncates owner
-  names at 30 characters, and the longest real slug is 46 — but the input is
-  third-party data and the failure is total, so slugs are now capped at 120
-  characters. Collisions the cap could introduce go through the same dedup as
-  every other collision.
-- **A malformed permit date would have scored as recent.** Both the
-  "latest permit wins" pick and the `DEMO_SCORE_YEARS` recency gate order
-  `issued` as a plain string, and any non-ISO value sorts above every real
-  date (`"not-a-date" > "2021-08-07"`), so it would have won the +5 concern
-  bonus. Today's feed is clean — all 10,822 permits parse as `YYYY-MM-DD`,
-  spanning 2000-01-03 to 2026-07-13 with none empty and none in the future —
-  so this was latent. Malformed values are now blanked at the join and the
-  gate checks the shape before trusting the comparison.
-
-### Suspects cleared
-
-- **THE SLUG ALPHABET IS SAFE.** `_slugify` emits strictly `[a-z0-9-]` for
-  *any* input, by construction: `re.sub(r"[^a-z0-9]+", "-", name.lower())`
-  replaces every character outside the class, the only other character it can
-  introduce is the hyphen, and the `or "unknown"` fallback rules out empty.
-  Verified against all 65,074 real `owner_norm` values (which produce owner
-  slugs) and all 67,455 raw `PRIMARY_OWNER` values (which produce operator
-  labels): zero characters outside the alphabet in either set. Also verified
-  against adversarial inputs — quote-and-script-tag injections, path
-  traversal, NUL and newline, Greek, Cyrillic, an RTL override, a dotted
-  capital I (whose `.lower()` yields a combining mark), and emoji.
-  **Item 6 may rely on this: a slug interpolated into an inline `onclick`
-  cannot carry a quote, angle bracket, backslash, or whitespace.** The
-  guarantee is now pinned by tests at both `_slugify` and `emit()` output.
-- **Slug collisions are possible but cannot silently overwrite.** Distinct
-  names really can collapse to one slug — accents are the cheapest case
-  (`josé` and `josë` both give `jos`), and 2,133 groups of raw owner names
-  collide, though almost all are punctuation variants of one entity
-  ("Klopman Ventures Inc." / "Klopman Ventures, Inc."). Both the owner path
-  (`emit()`) and the operator path (`_slugify_unique`) already resolve them
-  with a `-2`, `-3` suffix, and the loop re-checks each candidate so a suffix
-  can't steal a slug a real name would have earned. Across the 65,074 real
-  `owner_norm` values there are **zero** collisions, so no suffix is currently
-  in play. The assignment order follows the parcel feed's order, which is
-  stable for a given `parcels.geojson` but not pinned across refetches
-  (the ArcGIS query sends no `orderByFields`) — moot while collisions are zero.
-- **The 12-month 311 window is correct, including the leap-day branch.** The
-  window is anchored on the dataset's max `open_date` (frozen at 2024-05-10,
-  since the feed stopped updating) rather than today. `anchor.replace(year=...)`
-  raises only for a Feb-29 anchor, so the `day=28` fallback fires only then;
-  every other date takes the plain path and lands on the same calendar day a
-  year earlier. The boundary is inclusive.
-- **Per-parcel violation and complaint counts are taken before the trim to
-  25.** The counters increment inside the join loops; `join_all` trims the
-  dossier lists afterwards. Confirmed by test. (The type *tally* was the
-  exception — see the fix above.)
-- **Address-index collisions are deterministic and order-independent.** An
-  exact normalized address always beats another parcel's no-street-type
-  alias regardless of arrival order, because the alias is only written when
-  the key is free while the exact key overwrites. Genuinely identical
-  addresses (condos) are last-write-wins — arbitrary, but fixed for a given
-  input file.
-- **Socrata paging handles a row count that is an exact multiple of
-  PAGE_SIZE.** The extra request returns zero rows and terminates; no loop,
-  no lost tail. The 311 `$where` needs no escaping — neither `DPIS` nor
-  `Buffalo Municipal Housing Authority` contains an apostrophe, and `requests`
-  URL-encodes the clause. A literal containing one would need doubling.
-- **Atomic writes do protect the prior cache.** A failed write leaves the
-  previous file byte-for-byte intact and removes the `.tmp` sibling, so a
-  broken refetch can't strand a `--no-fetch` run.
-- **`_join_311`'s dead client-side filter.** `HOUSING_311_KEYWORDS` and
-  `_is_housing_311` are unreferenced — the subject filter moved server-side
-  into the `$where`. All 195,004 rows are DPIS (191,728) or BMHA (3,276).
-  Left in place; removing dead code is Item 10's call, not a correctness fix.
-- **`oldest_violation` is a misnomer, and unused.** It is the *minimum* of
-  each parcel's *latest* violation date across the owner's portfolio, which
-  is not "the owner's oldest violation". It is emitted in every owner file
-  and read by nothing in `web/`.
-- **Coordinate precision is not rounded anywhere.** `properties.geojson`
-  ships full float geometry straight from ArcGIS, which is most of its 65MB.
-  A correctness non-issue; flagged as payload weight for whoever owns the
-  emit-size question.
-- **`web/data/owners/` accumulates orphans across runs.** emit writes files
-  but never removes ones the current run didn't produce, so slugs from an
-  older normalization survive. Today's run leaves 72 orphan owner files and 7
-  orphan operator files (~45KB) — all from before the Item-2 change that drops
-  "and" from `owner_norm` (`adam-mickiewicz-library-and`,
-  `andrews-robert-i-and`, …). Harmless to the frontend, which only requests
-  slugs named in `properties.geojson`, but they do get uploaded on deploy.
-  Left alone here: pruning the directory is an emit change a later item owns.
-- **`fetch.py` has no retry.** Timeouts are generous (180s Socrata, 240s
-  ArcGIS) but a single transient failure aborts the whole fetch. The atomic
-  writes mean the previous cache survives intact, so the recovery is just
-  re-running — noted as a robustness gap, not a correctness bug.
-- **The ArcGIS query sends no `orderByFields`.** The layer reports
-  `supportsPagination: true` and returned exactly the 93,440 features
-  `returnCountOnly` promises, so paging is stable in practice. Unlike SODA,
-  ArcGIS orders by the OID field by default when paginating. Left as is; the
-  consequence if it ever drifts is a reshuffled parcel feed, which only
-  matters for slug-collision tie-breaks (currently zero).
-- **`parcel_id` is unique across all 93,069 parcel records** (0 duplicates, 0
-  empty), so `emit`'s `by_id` map can't drop a parcel or double-count one into
-  an owner's aggregate. The 20-char SBL is unique across all 93,440 raw
-  features too.
-
-## 2026-08-08 — Dataset refresh (Item 5)
-
-Full canonical run (fetch → NYS DOS refresh → join → emit) with all Item 2–4
-fixes in place, 1,214s end to end. `web/data/` is not versioned, so the counts
-live here:
-
-- parcels 93,069 (May: 93,069) · owners 65,072 (May: 65,089)
-- violations 250,586 total, **247,696 matched (98.8%)** — May matched 220,068;
-  the jump is Item 4's SBL fallback + ordered paging recovering rows that were
-  always in the source, plus ~3 months of new data
-  (`code_violations_max_date` 2026-07-24)
-- 311 max date **2024-05-10 — still frozen upstream, as expected**
-- demolitions 10,822 permits → 8,979 matched → **6,720 parcels demolished**
-  (2,020 more hold a permit over a still-standing building);
-  `demolitions_max_date` 2026-07-13
-- clusters 2,200: high 1,318 · medium 846 · low 36 · dropped 4
-  (May: 1,330/855/19/4 — shifts match the Item 2 fix projections)
-- NYS DOS index rebuilt with ordered paging, `nys_dos_max_date` 2026-08-06;
-  26 clusters now flagged at registered-agent addresses
-- orphaned owner/operator JSON purged (output dirs cleared before emit);
-  exactly 65,072 owner + 2,200 operator files remain
-
-Top-10 leaderboards vs the live May site are stable — same operators, counts
-up modestly. Only churn in the open-violations board: SRE Management LLC
-dropped out of the top 10, Sokolov 94 LLC entered.
-
-NOT deployed — deploy is a single atomic step at the end of the effort
-(frontend schema changes must ship with this data).
-
-## 2026-08-08 — Web bug hunt (Item 6)
-
-### Deep links to a parcel never resolved
-
-`selectParcel` read a parcel's properties from `map.querySourceFeatures`,
-which only returns features from tiles already loaded *in the current
-viewport*. `selectParcel` writes `#/parcel/:id` into the address bar on every
-map click, so that URL is what anyone copies, bookmarks, or reloads — and
-opened cold it lands on the default city-wide view, matches nothing, and
-rendered "Couldn't load that parcel — try zooming in and clicking again".
-Every shared or reloaded dossier link was broken, and the message blamed the
-reader's zoom level for a lookup problem.
-
-(The dossier is also the one view with no "Copy link" button — the three
-`_panelHeadActionsHtml` call sites are portfolio, operator, and leaderboards.
-Now that parcel URLs resolve, that gap is worth closing in the desktop pass.)
-
-The address index already carries a centroid for all 93,069 parcels, so the
-parcel can be found by jumping the camera there and re-querying once the map
-goes idle. The wait has a 5s ceiling — a wedged tile request must not hang a
-route forever.
-
-Reaching the not-found branch now means the id is in neither the rendered
-source nor the address index, which is a genuinely unknown parcel.
-
-### A stray "%" in the URL threw an uncaught URIError
-
-`applyHashRoute` fed raw hash segments to `decodeURIComponent`, so
-`#/owner/%E0%A4%A` (a truncated escape, easy to produce by hand-editing or by
-a link that got cut) threw `URIError: URI malformed` out of the hashchange
-handler. The panel kept whatever the previous route had rendered, so the URL
-and the panel disagreed with no visible error.
-
-### Stale bookmarks read as a network hiccup
-
-Owner and operator slugs are rebuilt from owner names on every refresh, so
-links from before a refresh 404 — a known consequence of the pipeline, not a
-transient failure. Both loaders reported "Couldn't load that owner's
-portfolio", which invites a pointless retry. A 404 is now separated from a
-transport failure and says the record isn't in the current dataset.
-
-### Back to a parcel route left the panel on the owner view
-
-`state.selectedId` stayed set while an owner or operator view was open, and
-`applyHashRoute` skips `selectParcel` when the routed id already matches it.
-Going parcel → owner → Back therefore restored the `#/parcel/` URL while the
-panel still showed the portfolio. Both loaders now release the selection.
-
-### A slow owner fetch could clobber a newer operator view
-
-`openPortfolio` and `openOperator` awaited a fetch with no guard, so on a slow
-connection the *earlier* request could resolve last and repaint the panel,
-null out `state.lastOperator`, and rewrite the URL back to its own route.
-Reproduced by delaying `/owners/` by 700ms and navigating owner → operator.
-
-`selectParcel` already captured a token (`_selectParcelToken`) but never
-compared it after awaiting — the guard was dead code. One module-level
-`_viewToken` now covers all three views and is compared at every resume
-point.
-
-### The leaderboard info tooltip leaked two document listeners per render
-
-`renderLeaderboards` registered document-level `click` and `keydown` handlers
-inside its per-button loop, and it re-runs on every tab and kind switch. Ten
-switches on a phone added 40 document listeners, each closing over a button
-already detached from the DOM. The dismissal handlers are now registered once
-at bootstrap; only the per-button click handler is re-bound per render.
-
-### On phones, the button labelled "Open" did not open anything
-
-Closing the sheet collapses it to `sheet-peek`, which is the state where CSS
-reveals the reopen pill. Tapping it called `renderLeaderboards`, and
-`showPanel` leaves an existing snap class alone — so the sheet stayed at
-120px and the pill stayed put. The handler now lifts the sheet to half on
-phones.
-
-### 311 copy implied data that doesn't exist
-
-The dossier's empty state read "No housing-related 311 complaints in the last
-18 months". Two things were wrong: the pipeline's window is 12 months, not
-18, and the dossier's complaint list isn't windowed at all — `_join_311`
-appends every matched complaint and only the `complaints_311_12mo` *counter*
-is gated by the cutoff. The empty state now says "on record".
-
-The counter tiles said "311 housing 12mo" and "311 (12mo)", which reads as
-the last 12 months from today. The window ends at the feed's max date
-(2024-05-10, frozen upstream), so the tiles now carry that anchor, derived
-from `meta.complaints_311_max_date` rather than hardcoded.
-
-### Inline onclick handlers — audit result
-
-Seven templates interpolated a value into an `onclick="fn('…')"` string. The
-values were slugs (`[a-z0-9-]`, pinned by pipeline tests), parcel ids, or the
-literals `"portfolio"`/`"operator"` — so none were exploitable, and the
-`scope` argument at the old line 101 traces to two hardcoded call sites in
-`_panelHeadActionsHtml`, not to data.
-
-The parcel id is the one value with no pipeline-level guarantee: it is copied
-straight from the assessment roll's SBL field. It happens to be strictly
-alphanumeric across all 93,069 parcels today, but nothing enforces that, and
-`escapeHtml` is the wrong layer inside a JS-string context anyway — the
-browser decodes entities before the JS parser runs. All seven sites now carry
-their argument in a `data-*` attribute.
-
-### Suspects that came back clean
-
-- **Search never builds a RegExp** — matching is `String.includes` on an
-  uppercased query, so `.*` and `([a-z]+)?$` are literal. Empty, sub-3-char,
-  5,000-char, and no-match queries all behave. Arrow-key result navigation
-  isn't implemented (a gap for Item 8, not a bug).
-- **CSV quoting** is RFC 4180-correct, and unreachable in practice: the export
-  carries addresses, and no address in the dataset contains a comma, quote, or
-  newline. Owner names that do (`Holcomb, Clinton`) never enter the CSV body —
-  only the filename, via the slug.
-- **Bottom-sheet drag** clamps to [80px, viewport height] at both extremes and
-  snaps to the nearest of peek/half/full; a tap under 6px cycles states.
-- **Rotating to landscape** drops below the 480px phone breakpoint, so the
-  sheet reverts to the desktop side panel and the leftover snap class goes
-  inert. No horizontal overflow at 844×390.
-- **Unknown routes and `#/parcel/` with no id** already fell through to the
-  leaderboards.
-- `demoPermit`'s string/object dual handling is still required — untouched.
-
-### Local dev silently tests production data
-
-`web/config.js` is gitignored and sets `DATA_BASE` to the deployed R2 bucket,
-and `index.html` swallows its load error. A local `python -m http.server`
-therefore serves the local `index.html`/`app.js` against **live R2 data**,
-which during this effort was still the May build. Move it aside to exercise
-`web/data/`. Browser caching of `config.js` survives the file being removed —
-use a fresh port.
-
-### Sheet drag could strand itself if the pointer vanished
-
-`setPointerCapture` throws `NotFoundError` when the pointer id is no longer
-active. It ran before the drag state was consistent, so the throw left
-`dragging = true`, the `dragging` class applied, and the CSS transition
-disabled — a sheet that no longer responds to the handle. The matching
-`releasePointerCapture` was already wrapped for the same reason.
-
-Only reproduced with synthetic `PointerEvent`s (`dispatchEvent` supplies no
-active pointer), so this is defensive rather than an observed field failure.
-
-## Desktop UI pass (Item 7)
-
-### The map legend was mixing a scale with a category
-
-`.legend-ticks` was a 120px flex row holding four labels — `none`, `5+`,
-`11+`, `demolished` — set to `justify-content: space-between`. Their combined
-text runs ~148px, so the row overflowed, `space-between` had no free space to
-distribute, and the labels butted together reading as one string:
-"none 5+ 11+ demolished". None of them sat under the swatch it named.
-
-Two separate problems underneath. The ramp has five swatches but only four
-labels, so the `1+` bucket (concern score 1-4) was never named. And `s4` is
-not a fifth step of a sequential scale — it is a categorical state, which is
-why its label was the one that would not fit. Splitting the categorical
-swatch onto its own row leaves four buckets over four 34px columns, each with
-room for its own tick.
-
-### Numeric table headers never got the alignment their cells had
-
-`table.portfolio thead th` set `text-align: left`; `td.num` set
-`text-align: right`. There was no `th.num` rule, so every header sat at the
-left edge of a column whose values were flushed right — measured at 1440px,
-the `Open` header started at x=1167 with its value right-aligned across an
-84px column. Most visible on single-row portfolios, where one header and one
-number sat 60px apart with nothing between them.
-
-### The audit list had three different value-column positions
-
-`.audit-key` used `min-width: 7em` on an inline-block. A min-width only holds
-while the content is shorter than it: `SHARED MAILING ADDRESS` renders about
-14em at 10.5px mono, so it pushed its own value right while `COHESION` and
-`MEMBER` values started at two further positions. Measured x=1029 / 986 / 979
-on one operator. Fixing it in CSS alone was not possible because the value
-had no element of its own — the rows now emit `<span class="audit-val">`.
-
-Separately, a 16-LLC operator printed the key `MEMBER` sixteen times down the
-left column. The repeats are still in the DOM (screen readers and the tests
-read them); CSS hides the duplicate ink via `[data-key-repeat]`.
-
-### Every row that acts like a link was mouse-only
-
-`.leaderboard li`, `.leaderboard.llc-list li`, `table.portfolio tbody tr` and
-`#search-results li` all carried click listeners and none carried `tabindex`.
-Enumerating the document's focusables at 1440px returned the search field, the
-MapLibre controls, the filter chip and the panel's buttons — not one row. The
-whole leaderboard, every portfolio table and the address dropdown were
-unreachable without a mouse.
-
-`style.css` already had a `.leaderboard li:focus-visible` rule and a
-`#search-results li.active` rule. Both were dead: nothing could focus an `li`,
-and nothing ever set `.active`. The styling for keyboard search had been
-written and never wired.
-
-### Focus rings were Chrome blue on eleven of thirteen focusable elements
-
-The `:focus-visible` block covered `#filter-chip`, `.tabs button`,
-`.kind-toggle button` and `.leaderboard li` (the last of which could not be
-focused). Everything else — panel close and collapse, Copy link, Download CSV,
-the CTAs, the dossier filter chips, the audit disclosure, the map controls —
-fell through to the user-agent ring. Confirmed by tabbing to `#panel-close`
-and reading `outline: rgb(0, 95, 204) auto 1px`.
-
-### The panel's only exit scrolls away
-
-`#panel-close` and `#panel-collapse` are absolutely positioned inside `#panel`,
-which is itself the scroll container (measured 2141px of content in an 868px
-viewport on a 21-violation dossier). Read to the bottom and there is no
-control on screen to leave the view. There was no Escape handler either — the
-only one in the file dismisses the leaderboard info tip.
-
-Making the buttons sticky would have fought `#panel`'s `translateX` slide, so
-Escape carries this instead; it delegates to the existing `#panel-close`
-click handler and therefore inherits its route-aware behaviour (back to the
-leaderboards from a record, collapse to the rail from the leaderboards).
-
-### The dossier was the one view without a Copy link
-
-`_panelHeadActionsHtml` was called from the portfolio, operator and
-leaderboard renders; `renderDossier` emitted a bare `<h2>`. Parcel deep links
-(`#/parcel/<id>`) work, so the one view a reader is most likely to want to
-send someone was the one with no way to get the link out of it. Verified after
-the fix that the button copies the parcel route, not the page root.
-
-### Signal red was paid out on boards where nothing was wrong
-
-`.leaderboard li.top1 .stat-num { color: var(--signal) }` applied to whichever
-board was showing. On the Value board that painted HARBORcenter Development's
-$73.3M in the alarm red — an entity with 8 open violations across 2 parcels,
-top of the list purely for owning expensive land. Red means concern in every
-other place it appears on this page, including the map ramp two inches away.
-
-The boards now declare whether their leading number counts something wrong
-(`concern: true` on open violations, all violations, 311) and only those get
-the accent.
-
-### Seven filter chips never fit one panel row
-
-`Status:` + 3 chips + `When:` + 4 chips is roughly 560px of content in a 468px
-column, so the row always wrapped — and because label and chips were flat
-siblings in one flex container, it wrapped mid-group. "Last 90d" and "Last
-30d" landed on a second line directly under the Status label, reading as two
-more status options. Wrapping each label with its own chips fixes the break
-point without changing what wraps.
-
-### The filter chip ellipsised away its own dismiss control
-
-`#filter-chip` was one text run under `white-space: nowrap; overflow: hidden;
-text-overflow: ellipsis`, and "✕ Clear" was the last thing in it. Owner labels
-run long — "INCT Holdings LLC (+11 more LLCs) · 312 parcels" is 336px of
-content in a 336px chip at 360px wide — so the ellipsis always landed before
-the Clear, which measured at `left: 403` on a 360px screen. The chip still
-cleared the filter when tapped anywhere, so the filter was escapable; what was
-missing was any sign that it could be.
-
-### Three pieces of map furniture were stacked in the same 44px
-
-At phone peek the sheet occupies 0–120px, the colophon is pinned at
-`bottom: 132px` and the legend at `bottom: 168px`. The filter chip is also
-`bottom: calc(120px + 12px)` — the same slot as the colophon, which it covered
-outright, and 8px into the legend above it. The collision only appears with a
-map filter active, which is why the 168px legend offset verified clean when it
-was set.
-
-### The masthead date wrapped into the search bar below 380px
-
-`Public records · Buffalo, N.Y. · refreshed 2026-08-08` is ~345px of IBM Plex
-Mono at 10.5px. At 390px it fits the 362px content box with 17px to spare; at
-360px the box is 332px and the line wraps to 30px tall, spanning y 40–71.
-`#search-row` starts at y 62 with an opaque `var(--paper)` background, so the
-second row was half-covered and read as a stray "08" under the title.
-
-### The "Open" pill on phones was never visible in either state that showed it
-
-`#reopen-panel` is `bottom: 8px` at `z-index: 25`; `#panel` is `z-index: 30`
-and reaches `bottom: 0` at 120px (peek) or 60px (`.hidden`). The pill's box
-(807–836 on an 844px screen) falls inside the sheet in both cases —
-`elementFromPoint` at its centre returned the panel's content, not the button.
-The CSS force-shows it at peek and the JS relabels it "▴ Open" on every snap
-to peek, so both halves were maintaining a control nobody could see.
-
-### Board pills were 36px on phones because an id selector outranked the fix
-
-The phone block sets `.tabs button { min-height: 44px }` (specificity 0-1-1).
-The desktop pill treatment added in the previous pass is written
-`#panel .tabs button` (1-1-1) with `min-height: 36px`, and cascade order does
-not enter into it — the id wins at every viewport. Measured 60×36 at 390px
-while the sibling `.kind-toggle button` next to it measured 83×44.
-
-### The 481–880px band ellipsised every board label to nonsense
-
-The horizontal-scroll treatment for the five board pills is scoped to ≤480px.
-Between 481 and 880 the base `.tabs button { flex: 1 }` splits a 316px row
-five ways, and the labels truncate to "Op…", "Pr…", "Val…". The kind toggle
-above it fails the same way with the long-form labels the same band selects:
-"Operators (mailing-address clusters)" in a 158px tab renders as
-"Operators (mailing-addr…". Both are load-bearing labels, not decoration.
-
-### At tablet the filter chip ran under the side panel and over the legend
-
-`#filter-chip { bottom: 86px; left: 18px; right: 18px }` spans the full width,
-but the panel occupies the right 360px at `z-index: 30` — so the chip's right
-end, "✕ Clear" included, was covered. At the bottom it also overlapped the
-legend, which sits at `bottom: 44px` and stands ~75px tall in this band.
-
-### Tab labels were chosen at render time and stranded by rotation
-
-`renderLeaderboards` picks between a short label with an ⓘ button and the
-spelled-out label by testing `matchMedia("(max-width: 480px)")` when it runs.
-Nothing re-rendered on resize, so a phone rotated to landscape kept the short
-labels — and `.info-btn` is `display: none` above 480px, so the explanation
-those labels depend on became unreachable. Rotating the other way stranded the
-long labels in the narrow sheet.
-
-### Verified sound: snap targets, tap-to-cycle, and drag past both ends
-
-Driving synthetic pointer events on the handle at 360×740: tap cycles
-peek→half→full→peek correctly from all three states; a drag 600px past the top
-clamps at `innerHeight` and snaps to full; a 700px drag down from full lands
-the panel at the 80px floor and snaps to peek. The one gap is velocity — a
-60px flick up from peek snaps back to peek, because `endDrag` only measures
-final position. Left alone; velocity tracking is the gesture-logic change this
-pass was scoped out of.
-
-### The stacked portfolio card labelled its own heading
-
-The mobile card treatment turns each `<td>` into a labelled row via
-`data-label` and `::before`, and styles `td:first-child` as a full-width bold
-title with a rule under it. Both applied to the address cell, so the card's
-heading read "Address  293 Ontario St" — the label restating what the
-treatment above it already established. The remaining three cells do need
-their labels; only the first one is self-evident.
-
-### The info tip only knew how to hang below its button
-
-`showInfoTip` clamped `left` (`Math.min(rect.left, innerWidth - 220)`, against
-a hard-coded 220px width) and did not clamp `top` at all. A button low in the
-viewport put the tip past the bottom edge — reproduced by pinning an ⓘ at
-`innerHeight - 30`, which placed a 113px tip at y 818–931 on an 844px screen.
-It is appended to `<body>`, so nothing clips it back into view.
-
-Separately, the tip is positioned once against the viewport and then left
-alone. Scrolling the panel or resizing the window slid its button out from
-under it, stranding an explanation over unrelated content — after a resize
-from 768 to 390 it was still sitting over the map.
-
-### Checked and sound: search dropdown, safe areas, deep links
-
-The search listbox is `max-height: 40vh` below a row ending at y 114 — 452px
-bottom edge on an 844px screen, 410px on a 740px one, both clear of the
-~300–340px an iOS keyboard takes. `#search` is `font-size: 16px`, so iOS will
-not auto-zoom the field. A cold deep link to `#/parcel/<id>` lands the sheet at
-half with the dossier readable.
-
-`env(safe-area-inset-*)` is inert here: `index.html` has no `viewport-fit=cover`,
-so the page is letterboxed into the safe area and nothing can fall under a
-notch or home indicator. The `max(38px, env(safe-area-inset-top, 12px))` on
-`sheet-full` resolves to its 38px floor. Opting into edge-to-edge would mean
-re-testing every fixed-position edge element on hardware; the letterboxed
-default is correct as it stands.
+## 2026-08-07 — Planning audit (pre-implementation)
+
+- **"Demolished" is heavily over-flagged.** 8,342 of 93,069 parcels (~9% of the
+  city) carry `demolished=true`. The join (`pipeline/join.py::_join_demolitions`)
+  matches only the permit's normalized full address and ignores its `sbl` and
+  `issued` fields; permits span 2000–2026 (only ~460 since 2020), and a 2006
+  permit flags a parcel exactly like a 2026 one. Every flag adds +5 concern
+  score and the dark-red map color.
+- **The permit `sbl` field is a usable join key.** Right-padding it with zeros
+  to 20 chars matches a current parcel SBL for 8,549 of 10,661 permits that
+  carry one. The parcel layer also has corroboration fields: `PROP_CLASS`
+  (3xx = vacant land), `LAND_AV` vs `TOTAL_AV`, `YR_BLT`; assessment roll year
+  is 2025.
+- **The demolition permit feed itself lags** — the current pull contains only
+  2 permits dated 2026.
+- **Owner matching is exact-string end to end.** No fuzzy matching anywhere:
+  suffix canonicalization (`normalize_owner`), shared-mailing-address
+  clustering, token-cohesion scoring, person-name signature (frozenset of
+  first+last token). Known gap: `&` is stripped to a space while "and" is kept,
+  so "A&B LLC" and "A and B LLC" never merge.
+- **XSS is mostly covered** by `escapeHtml` (web/app.js:36), applied
+  consistently in HTML contexts. Residual weakness: entity escaping inside
+  inline `onclick="fn('${escapeHtml(x)}')"` JS-string contexts (app.js:101,
+  489, 674, 693, 1086, 1146, 1185) — the browser decodes entities before JS
+  parses the attribute, so escaping there is the wrong layer. The effective
+  defense is the emitter's slug alphabet, to be verified.
+- **The 311 feed is frozen upstream at 2024-05-10.** The pipeline correctly
+  anchors its "12-month" complaint window to the feed's own max date, not
+  wall-clock today — but any UI copy saying "last 12 months" is misleading.
+- **Web vitest suites mock `fetch`** (web/tests/setup.js), so regenerating
+  web/data does not break them; string-asserting tests do break when UI copy
+  changes.
+- **The visual layer has no AI-slop markers**: one functional gradient, no
+  emoji, three functional box-shadows, square corners, Hanken Grotesk + IBM
+  Plex Mono, reduced-motion respected. The de-slop pass is prose-focused.
+- Baseline `meta.json` (2026-05-10): parcels 93,069 · owners 65,089 · clusters
+  {high 1330, medium 855, low 19, dropped 4} · violations matched 220,068 ·
+  demolitions matched 8,342.

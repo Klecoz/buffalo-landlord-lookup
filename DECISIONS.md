@@ -2,6 +2,59 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — emit() splits into phase functions; app.js does not
+
+`emit()` and `_build_operator_clusters()` were the two functions over 250
+lines. Both are now sequences of private, argument-explicit phase functions,
+with `emit()` reduced to an orchestrator that reads as a table of contents.
+
+The bar was "does this read better", not "is 350 lines too many". It cleared
+the bar because the phases pass named values to each other and nothing else —
+no shared accumulator to thread, so the arguments *are* the documentation of
+what each phase depends on. That is the thing banner comments could not say.
+
+Rejected: splitting `web/app.js` the same way. It is longer, but its functions
+are already small and its coupling runs through DOM and module state rather
+than through arguments, so the same move would produce long parameter lists
+that document nothing.
+
+Rejected: extracting one `_build_one_cluster()` from the clustering loop. It
+would have taken eight arguments — a signature longer than the code it hides.
+
+Proof obligation for a refactor claiming no behavior change: `run.py
+--no-fetch` before and after, then compare checksums of every emitted file.
+Byte-identical across all 67,277 (`meta.json` excluded — its `generated_at`
+moves). This only became possible after the tie-break fix below.
+
+## 2026-08-08 — Cohesion token ties break alphabetically
+
+Tied tokens were previously resolved by `Counter` insertion order, which is
+seeded per process, so the emitted evidence strings differed between identical
+runs. Sorting before the `max` fixes the winner.
+
+Alphabetical is arbitrary — `zoll` is arguably the better family stem than
+`sean` — but the two tie precisely on the only signals the heuristic has
+(owner count, then token length), so there is no principled preference to
+encode. The requirement is that it be *stable*, not that it be clever.
+
+Rejected: adding a "prefer the surname-looking token" rule to break the tie
+with meaning. That is a new heuristic smuggled in as a bug fix, and it would
+need its own evidence to justify.
+
+Rejected: sorting `_tokenize_for_stem`'s output at the source. It would fix
+this call site and leave the next one to rediscover the problem.
+
+## 2026-08-08 — oldest_violation is deleted, not renamed
+
+The field was in every owner file and read by nothing. It was also a misnomer:
+the minimum across a portfolio of each parcel's *latest* violation date.
+
+Rejected: renaming it to something accurate and leaving it in place. A
+correctly named field with no consumer is still a field every future reader
+has to understand and every deploy has to ship. If a portfolio-age signal is
+wanted later, it should be specified from what the UI needs — not recovered
+from a name that was never right.
+
 ## 2026-08-08 — A generated evidence line says "likely" rather than asserting
 
 The medium→low demotion in `emit.py` appended this to a cluster's evidence:
@@ -276,6 +329,7 @@ LLC lists too — a rebuild of the event system for no correctness gain.
 Rejected: leaving the slug sites alone with a comment stating the invariant
 (the option the plan allowed). The comment now states the invariant *and*
 there are no exceptions to remember.
+
 ## 2026-08-08 — One view token guards all three async views
 
 A single module-level `_viewToken`, bumped on entry to `selectParcel`,
@@ -290,6 +344,7 @@ exist anyway.
 Sharing one counter across all three views is deliberate: navigating to an
 owner should cancel a pending parcel selection, which is what the shared
 counter gives for free.
+
 ## 2026-08-08 — Deep-linked parcels are found via the address index
 
 `selectParcel` falls back to the centroid in `state.addressIndex` and
@@ -306,6 +361,7 @@ depending on how you got there.
 
 The idle wait is capped at 5s so a wedged tile request degrades to the
 not-found panel instead of hanging the route.
+
 ## 2026-08-07 — Violations join gets an SBL fallback, address stays primary
 
 `_join_violations` now tries the row's `sbl` when the normalized address

@@ -1,6 +1,6 @@
 # Buffalo Landlord Lookup
 
-Browser tool: enter a Buffalo, NY address → see who owns it, code-violation history, recent 311 complaints, and the owner's full property portfolio across LLCs.
+Browser tool: enter a Buffalo, NY address or an owner's name → see who owns it, code-violation history, recent 311 complaints, and the owner's full property portfolio across LLCs.
 
 A personal civic-data toy. No backend, no DB, no auth. A Python pipeline scrapes public data, joins it to parcels, and emits static JSON the frontend reads directly.
 
@@ -29,6 +29,7 @@ All public:
 
 - **data.buffalony.gov** (Socrata API): code violations, 311 service requests, demolition permits
 - **NYS GIS Clearinghouse** (ArcGIS REST FeatureServer): tax parcels w/ owner-of-record, filtered to `MUNI_NAME='Buffalo'`
+- **data.ny.gov** (Socrata API): NYS DOS Active Corporations (`n9v6-gdp6`), reduced to an entity-count-per-address index that tells a real shared owner from a registered-agent pool
 - Map tiles: OpenStreetMap via MapLibre GL JS
 
 The pipeline writes a `meta.json` with row counts and refresh date. The footer of every page shows it.
@@ -37,6 +38,7 @@ The pipeline writes a `meta.json` with row counts and refresh date. The footer o
 
 - **Owner aggregation is string-matching only** for the per-owner view. "ACME PROPERTIES LLC" and "Acme Properties, L.L.C." merge; "John Smith" and "John A Smith" don't. The **Operators** leaderboard groups owners sharing a mailing address, surfacing many cross-LLC portfolios — but shared service-address pools (registered agents, CPA firms) are suppressed heuristically and may miss some connections. Bulk LLC unmasking via NYS DOS isn't available (the 2026 LLC Transparency Act exempts domestic LLCs).
 - **The 311 dataset (`whkc-e5vr`) stopped updating in May 2024.** The 12-month complaint window is anchored to the dataset's max date, not today. Code violations and parcels are current.
+- **"Demolished" means a demolition permit *plus* a parcel that currently reads vacant** — the permit alone only says one was issued. Permits join to parcels by SBL (tax map id), falling back to address for the ~200 permits with no usable SBL. A demolished parcel shows its permit date and which of the two joins matched it, so a bad match is visible rather than silent.
 - **The tool never says "X is a slumlord."** It shows facts; readers form a view.
 - **Not legal advice.** Research tool only.
 
