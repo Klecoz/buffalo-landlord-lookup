@@ -455,3 +455,33 @@ def test_polygon_centroid_handles_unclosed_ring():
     )
     assert parcels[0]["lng"] == 1.0
     assert parcels[0]["lat"] == 1.0
+
+
+# --- violation type tally vs the 25-row trim ----------------------------
+
+
+def test_violation_type_counts_survive_the_trim_to_25():
+    """Per-parcel violation lists are trimmed to the 25 most recent for
+    payload size. The code_section tally must be taken from the full set —
+    otherwise the owners with the longest violation histories, the ones the
+    leaderboard exists to surface, get their oldest violations dropped from
+    the tally."""
+    fc = _parcel_fc([
+        {"LOC_ST_NBR": "216", "LOC_STREET": "Landon", "PRIMARY_OWNER": "X",
+         "SBL": "AAA"},
+    ])
+    parcels, by_addr = _build_parcel_records(fc)
+    violations = (
+        # 26 old rubbish violations — the trim would cut most of these.
+        [{"address": "216 Landon", "status": "ACTIVE",
+          "code_section": "Section 308", "date": f"2020-01-{d:02d}T00:00:00.000"}
+         for d in range(1, 27)]
+        # 4 recent electrical ones, which survive the trim.
+        + [{"address": "216 Landon", "status": "ACTIVE",
+            "code_section": "Section 604", "date": f"2026-01-{d:02d}T00:00:00.000"}
+           for d in range(1, 5)]
+    )
+    _join_violations(by_addr, violations)
+    p = parcels[0]
+    assert p["code_violations_total"] == 30
+    assert dict(p["violation_type_counts"]) == {"Section 308": 26, "Section 604": 4}

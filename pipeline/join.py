@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -243,6 +243,9 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
             "demolished": False,
             "demo_permit": None,
             "last_violation_date": None,
+            # Tallied during the join, i.e. over every violation — not over
+            # the 25 kept below for the dossier.
+            "violation_type_counts": Counter(),
             "violations": [],
             "complaints": [],
         }
@@ -296,6 +299,9 @@ def _join_violations(
             prev = parcel["last_violation_date"]
             if prev is None or date.isoformat() > prev:
                 parcel["last_violation_date"] = date.isoformat()
+        section = (v.get("code_section") or "").strip()
+        if section:
+            parcel["violation_type_counts"][section] += 1
         parcel["violations"].append({
             "date": v.get("date"),
             "status": v.get("status"),

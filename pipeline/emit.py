@@ -497,10 +497,10 @@ def emit(
             if parcel["last_violation_date"]:
                 if oldest_violation is None or parcel["last_violation_date"] < oldest_violation:
                     oldest_violation = parcel["last_violation_date"]
-            for v in parcel.get("violations") or ():
-                section = (v.get("code_section") or "").strip()
-                if section:
-                    violation_type_counts[section] += 1
+            # Tallied by the join over every violation. Re-deriving it from
+            # parcel["violations"] would only see the 25 rows kept for the
+            # dossier, under-counting exactly the heaviest portfolios.
+            violation_type_counts.update(parcel.get("violation_type_counts") or {})
             # Mailing-address tally — only if NOT owner-occupied.
             if not parcel.get("is_self_mail"):
                 mk = normalize_mail_address(

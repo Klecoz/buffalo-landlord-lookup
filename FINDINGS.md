@@ -283,3 +283,12 @@ applied at the next full run.
   warns and re-fetches. Clock skew is not treated as an error: a cache with a
   future mtime reads as fresh, which is the harmless direction — the next
   scheduled refresh corrects it, and `--force-dos-refresh` overrides.
+- **The per-owner violation-type tally was computed from the trimmed dossier
+  list, not the full violation set.** `join_all` trims each parcel's
+  `violations` to the 25 most recent to bound JSON size, and emit's
+  `violation_type_counts` looped over that trimmed list — so 13,333 of 247,715
+  matched violations (5.4%) never reached the tally. The loss is not spread
+  evenly: it falls entirely on the 1,269 parcels with more than 25 violations
+  (up to 241 on one), which are precisely the parcels behind the leaderboard
+  entries the tally annotates, and it always drops the *oldest* rows. Now
+  tallied in `_join_violations` as the rows go by, before the trim.
