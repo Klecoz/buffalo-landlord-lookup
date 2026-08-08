@@ -720,6 +720,7 @@ function applyDossierFilters(target) {
 window.openPortfolio = async function (slug, opts = {}) {
   try {
     const r = await fetch(`${DATA_BASE}/owners/${slug}.json`);
+    if (r.status === 404) { showMissingRecord("owner"); return; }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const portfolio = await r.json();
     portfolio._slug = slug;  // attach slug for the highlight toggle
@@ -1191,6 +1192,7 @@ function renderAuditDisclosure(op) {
 window.openOperator = async function (slug, opts = {}) {
   try {
     const r = await fetch(`${DATA_BASE}/operators/${slug}.json`);
+    if (r.status === 404) { showMissingRecord("operator"); return; }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const op = await r.json();
     state.lastOperator = op;

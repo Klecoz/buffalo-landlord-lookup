@@ -452,3 +452,11 @@ source nor the address index, which is a genuinely unknown parcel.
 a link that got cut) threw `URIError: URI malformed` out of the hashchange
 handler. The panel kept whatever the previous route had rendered, so the URL
 and the panel disagreed with no visible error.
+
+### Stale bookmarks read as a network hiccup
+
+Owner and operator slugs are rebuilt from owner names on every refresh, so
+links from before a refresh 404 — a known consequence of the pipeline, not a
+transient failure. Both loaders reported "Couldn't load that owner's
+portfolio", which invites a pointless retry. A 404 is now separated from a
+transport failure and says the record isn't in the current dataset.

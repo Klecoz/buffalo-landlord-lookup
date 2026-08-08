@@ -277,3 +277,34 @@ describe('applyHashRoute — undecodable segments', () => {
     spy.mockRestore()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Stale slugs — owner/operator slugs are rebuilt on every data refresh, so a
+// bookmarked link 404s. That must read as "gone", not as a network hiccup.
+// ---------------------------------------------------------------------------
+
+describe('missing records (404)', () => {
+  const notFound = () => ({ ok: false, status: 404, json: vi.fn() })
+
+  it('reports a 404 owner as not in the current dataset', async () => {
+    global.fetch = vi.fn().mockResolvedValue(notFound())
+    await window.openPortfolio('slug-from-an-old-bookmark')
+    const text = document.getElementById('panel-content').textContent
+    expect(text).toContain('Not in the current dataset')
+    expect(text).toContain('rebuilt each time the data is refreshed')
+  })
+
+  it('reports a 404 operator as not in the current dataset', async () => {
+    global.fetch = vi.fn().mockResolvedValue(notFound())
+    await window.openOperator('op-from-an-old-bookmark')
+    expect(document.getElementById('panel-content').textContent)
+      .toContain('Not in the current dataset')
+  })
+
+  it('still reports a genuine transport failure as a load error', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'))
+    await window.openPortfolio('some-owner')
+    expect(document.getElementById('panel-content').textContent)
+      .toContain("Couldn't load that owner's portfolio")
+  })
+})
