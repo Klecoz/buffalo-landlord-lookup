@@ -2,6 +2,26 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — The accent is scoped to boards that measure harm
+
+`concern: true` is a property of the board, not of the row. The alternative
+was to keep the rule global and accept that "top of this list" is worth the
+accent whatever the list ranks. That reading does not survive the Value board,
+where the leader is a stadium developer and the number is a land assessment.
+
+One accent that means one thing is the whole basis of this palette; spending
+it on "biggest" as well as "worst" costs more than it buys.
+
+Not fixed, deliberately: the portfolio view stacks two full-width bordered
+CTAs ("Same mailing address as related LLCs" and "Highlight on map") that read
+as equals though one navigates and one toggles a map layer. A secondary button
+variant would be a second button style in a system that deliberately has one.
+Recorded here rather than fixed.
+
+Not fixed, deliberately: `.conf-badge::before` prints "Confidence " ahead of
+text that already reads "high-confidence cluster", so the operator view says
+"Confidence high-confidence cluster". It is a copy defect and Item 9 owns copy.
+
 ## 2026-08-08 — Clickable rows get tabindex, not a wrapped button
 
 Leaderboard rows, LLC rows and property rows are `<li>` and `<tr>` elements

@@ -642,3 +642,32 @@ Making the buttons sticky would have fought `#panel`'s `translateX` slide, so
 Escape carries this instead; it delegates to the existing `#panel-close`
 click handler and therefore inherits its route-aware behaviour (back to the
 leaderboards from a record, collapse to the rail from the leaderboards).
+
+### The dossier was the one view without a Copy link
+
+`_panelHeadActionsHtml` was called from the portfolio, operator and
+leaderboard renders; `renderDossier` emitted a bare `<h2>`. Parcel deep links
+(`#/parcel/<id>`) work, so the one view a reader is most likely to want to
+send someone was the one with no way to get the link out of it. Verified after
+the fix that the button copies the parcel route, not the page root.
+
+### Signal red was paid out on boards where nothing was wrong
+
+`.leaderboard li.top1 .stat-num { color: var(--signal) }` applied to whichever
+board was showing. On the Value board that painted HARBORcenter Development's
+$73.3M in the alarm red — an entity with 8 open violations across 2 parcels,
+top of the list purely for owning expensive land. Red means concern in every
+other place it appears on this page, including the map ramp two inches away.
+
+The boards now declare whether their leading number counts something wrong
+(`concern: true` on open violations, all violations, 311) and only those get
+the accent.
+
+### Seven filter chips never fit one panel row
+
+`Status:` + 3 chips + `When:` + 4 chips is roughly 560px of content in a 468px
+column, so the row always wrapped — and because label and chips were flat
+siblings in one flex container, it wrapped mid-group. "Last 90d" and "Last
+30d" landed on a second line directly under the Status label, reading as two
+more status options. Wrapping each label with its own chips fixes the break
+point without changing what wraps.

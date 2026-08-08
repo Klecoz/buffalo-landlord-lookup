@@ -651,7 +651,7 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-.leaderboard li.top1 .stat-num { color: var(--signal); }
+.leaderboard--concern li.top1 .stat-num { color: var(--signal); }
 
 /* Constituent-LLC sub-list */
 .leaderboard.llc-list {
@@ -1418,12 +1418,20 @@ button, a, .leaderboard li, table.portfolio tbody tr, #search-results li,
 /* dossier filters, violation-type breakdowns, CSV export ================= */
 
 /* ----- Dossier filter row ----------------------------------------------- */
+/* Groups wrap as units, so a row that does not fit breaks between "Status"
+   and "When" rather than mid-group. */
 .dossier-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: 8px 16px;
   margin: 10px 0 14px;
+}
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 /* "Status:" / "When:" labels */
@@ -1433,11 +1441,6 @@ button, a, .leaderboard li, table.portfolio tbody tr, #search-results li,
   font-weight: 500;
   color: var(--ink-2);
   white-space: nowrap;
-  /* add a little left breathing room before each label except the first */
-  margin-left: 6px;
-}
-.filter-label:first-child {
-  margin-left: 0;
 }
 
 /* Chip base — outline style (inactive) */
@@ -1587,7 +1590,7 @@ ul.violation-types li:last-child {
 /* Phone adjustments for new elements */
 @media (max-width: 480px) {
   .dossier-filters {
-    gap: 6px;
+    gap: 8px 12px;
     margin: 8px 0 12px;
   }
   .dossier-chip {

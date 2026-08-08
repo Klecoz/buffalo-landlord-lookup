@@ -612,20 +612,27 @@ function renderDossier(props, dossier) {
          </button>`
       : "";
 
+  // A label and its chips are one group: seven chips never fit the panel on one
+  // line, and an ungrouped wrap dropped "Last 90d / Last 30d" onto a second row
+  // under the Status label, where they read as status options.
   const dateChips = (target) => `
-    <span class="filter-label">When:</span>
-    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="all" data-active="true">All time</button>
-    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="365">Last year</button>
-    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="90">Last 90d</button>
-    <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="30">Last 30d</button>
+    <div class="filter-group">
+      <span class="filter-label">When:</span>
+      <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="all" data-active="true">All time</button>
+      <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="365">Last year</button>
+      <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="90">Last 90d</button>
+      <button class="dossier-chip" data-target="${target}" data-filter="date" data-value="30">Last 30d</button>
+    </div>
   `;
 
   const violationFilters = violations.length > 0 ? `
     <div class="dossier-filters" data-target="violations">
-      <span class="filter-label">Status:</span>
-      <button class="dossier-chip" data-target="violations" data-filter="status" data-value="all" data-active="true">All <span class="chip-count">${violations.length}</span></button>
-      <button class="dossier-chip" data-target="violations" data-filter="status" data-value="active">Open <span class="chip-count">${openCount}</span></button>
-      <button class="dossier-chip" data-target="violations" data-filter="status" data-value="closed">Closed <span class="chip-count">${closedCount}</span></button>
+      <div class="filter-group">
+        <span class="filter-label">Status:</span>
+        <button class="dossier-chip" data-target="violations" data-filter="status" data-value="all" data-active="true">All <span class="chip-count">${violations.length}</span></button>
+        <button class="dossier-chip" data-target="violations" data-filter="status" data-value="active">Open <span class="chip-count">${openCount}</span></button>
+        <button class="dossier-chip" data-target="violations" data-filter="status" data-value="closed">Closed <span class="chip-count">${closedCount}</span></button>
+      </div>
       ${dateChips("violations")}
     </div>` : "";
 
@@ -648,7 +655,10 @@ function renderDossier(props, dossier) {
     : "";
 
   showPanel(`
-    <h2>Property Dossier</h2>
+    <div class="panel-head">
+      <h2>Property Dossier</h2>
+      ${_panelHeadActionsHtml(null)}
+    </div>
     <div class="addr">${escapeHtml(props.addr)}</div>
     <div class="owner">Owner of record: <strong>${escapeHtml(owner)}</strong></div>
 
@@ -1022,12 +1032,16 @@ window.toggleMapHighlight = function (kind, slug, label) {
 };
 
 // ---------- leaderboards ----------
+// `concern` marks the boards whose leading number is a count of things wrong.
+// Only those get the signal red on the top row — the biggest portfolio by
+// value or count is not the worst landlord, and red says "worst" everywhere
+// else on this page.
 const BOARDS = [
-  { key: "by_open_violations", label: "Open",  stat: "open",                statLabel: "open" },
-  { key: "by_all_violations",  label: "All",   stat: "all_violations",      statLabel: "viol." },
+  { key: "by_open_violations", label: "Open",  stat: "open",                statLabel: "open",  concern: true },
+  { key: "by_all_violations",  label: "All",   stat: "all_violations",      statLabel: "viol.", concern: true },
   { key: "by_properties",      label: "Props", stat: "properties",          statLabel: "props" },
   { key: "by_value",           label: "Value", stat: "total_value",         statLabel: "",      money: true },
-  { key: "by_complaints_311",  label: "311",   stat: "complaints_311_12mo", statLabel: "311" },
+  { key: "by_complaints_311",  label: "311",   stat: "complaints_311_12mo", statLabel: "311",   concern: true },
 ];
 
 function _syncLeaderboardHash() {
@@ -1136,7 +1150,7 @@ function renderLeaderboards() {
 
     ${list.length === 0
       ? `<p class="empty">No entries with non-zero count for this category.</p>`
-      : `<ul class="leaderboard">${rows}</ul>`
+      : `<ul class="leaderboard${active.concern ? " leaderboard--concern" : ""}">${rows}</ul>`
     }
 
     <div class="disclaimer">
