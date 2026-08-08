@@ -125,3 +125,106 @@ def test_mail_idempotent_for_po_box():
     twice = normalize_mail_address(once)
     # The key persists since "PO BOX 1234" survives the regex
     assert "PO BOX 1234" in twice
+
+
+# --- normalize_owner: adversarial business-suffix cases ------------------
+#
+# Audited 2026-08-07 against all 65,089 emitted owner records. Each case
+# below is either a spelling that actually occurs in the Erie County
+# assessment roll or a boundary the suffix regexes could plausibly get
+# wrong.
+
+@pytest.mark.parametrize("raw,expected", [
+    # Every LLC spelling in the roll collapses to one key.
+    ("ACME PROPERTIES L.L.C", "acme properties llc"),
+    ("ACME PROPERTIES llc.", "acme properties llc"),
+    ("ACME PROPERTIES, LLC,", "acme properties llc"),
+    ("acme properties l.l.c.", "acme properties llc"),
+    ("  ACME  ,  L.L.C.  ", "acme llc"),
+    # CORP / CORPORATION and INC / INCORPORATED.
+    ("Acme Corporation", "acme corp"),
+    ("ACME CORP", "acme corp"),
+    ("Acme Corp.", "acme corp"),
+    ("Acme Incorporated", "acme inc"),
+    ("ACME INC.", "acme inc"),
+    # LP and LLP. These two patterns share a prefix and `\bl ?p\b` runs
+    # first, so "l l p" is rewritten in two passes ("l lp" then "llp").
+    # All three spellings must still land on the same key.
+    ("Acme L.P.", "acme lp"),
+    ("Acme L P", "acme lp"),
+    ("Acme LP", "acme lp"),
+    ("Acme L.L.P.", "acme llp"),
+    ("Acme L L P", "acme llp"),
+    ("Acme LLP", "acme llp"),
+    # LIMITED on its own is a company suffix; the longer LLC phrases are
+    # matched first so they don't degrade to "ltd".
+    ("Acme Limited", "acme ltd"),
+    ("Acme Limited Liability Company", "acme llc"),
+    ("Acme Limited Liability Co", "acme llc"),
+])
+def test_normalize_owner_business_suffix_variants(raw, expected):
+    assert normalize_owner(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    "Landmark Properties LLC",
+    "Help Buffalo Housing",
+    "Holland Realty",
+    "Alpine Lodge",
+    "Compton Corner",
+])
+def test_normalize_owner_suffix_patterns_do_not_eat_real_words(raw):
+    """The suffix regexes are \\b-anchored, so they must not fire inside words.
+
+    `\\bl ?p\\b` in particular could plausibly chew "Landmark" or "Alpine";
+    it does not, because there is no word boundary mid-token.
+    """
+    assert normalize_owner(raw) == raw.lower()
+
+
+def test_normalize_owner_lp_pattern_absorbs_spaced_out_initials():
+    """Known cosmetic quirk, harmless in practice.
+
+    "H.E.L.P. Buffalo Inc" strips to the tokens "h e l p buffalo inc", and
+    `\\bl ?p\\b` then rewrites the trailing "l p" of the acronym to "lp".
+    The key is ugly but stable: every spelling of this owner in the roll
+    ("H.E.L.P." and "H.e.l.p.") produces it, so nothing is split. A bare
+    "HELP" has no internal boundary and is untouched.
+    """
+    assert normalize_owner("H.E.L.P. Buffalo Inc") == "h e lp buffalo inc"
+    assert normalize_owner("H.e.l.p. Buffalo Inc") == "h e lp buffalo inc"
+    assert normalize_owner("HELP Buffalo Housing") == "help buffalo housing"
+
+
+def test_normalize_owner_trustee_folds_into_trust():
+    """Deliberate: "X Trustee" and "X Trust" are the same holding.
+
+    15 owners in the roll spell it "Trustee(s)". None of them collide with
+    a differently-owned "Trust" of the same name, so the fold is free.
+    """
+    assert normalize_owner("Smith Family Trustee") == normalize_owner("Smith Family Trust")
+    assert normalize_owner("Smith Family Trustees") == "smith family trust"
+    assert normalize_owner("Kowal Mary A Trustee") == "kowal mary a trust"
+
+
+def test_normalize_owner_keeps_diacritics_distinct():
+    """No case folding for accents — and none is needed.
+
+    `\\w` is Unicode-aware, so "José" survives punctuation stripping intact
+    and does not match "Jose". Zero of the 65,089 owner records contain a
+    non-ASCII character, so accent folding would be dead code.
+    """
+    assert normalize_owner("José Realty") == "josé realty"
+    assert normalize_owner("José Realty") != normalize_owner("Jose Realty")
+
+
+@pytest.mark.parametrize("raw", [
+    "ACME PROPERTIES, L.L.C.",
+    "Acme L L P",
+    "Smith Family Trustee",
+    "H.E.L.P. Buffalo Inc",
+    "Acme Limited Liability Company",
+])
+def test_normalize_owner_idempotent_on_adversarial_input(raw):
+    once = normalize_owner(raw)
+    assert normalize_owner(once) == once

@@ -11,8 +11,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from cluster_score import (
+    REGISTERED_AGENT_THRESHOLD,
+    SHARED_OWNER_THRESHOLD,
     address_kind_from_key,
     classify_cluster,
+    classify_service_address,
     dedup_persons_in_cluster,
     name_stem_cohesion,
 )
@@ -323,3 +326,59 @@ def test_dedup_single_token_name_kept_as_singleton():
     groups = dedup_persons_in_cluster(block)
     assert len(groups) == 1
     assert groups[0]["canonical"] == "BUFFALO"
+
+
+# --- structural properties of the cohesion score ------------------------
+#
+# Added 2026-08-07 after auditing all 2,204 emitted clusters. These pin
+# down artifacts of the "fraction of owners sharing the top token" formula
+# that are easy to misread when looking at the evidence string in the UI.
+
+def test_two_owner_cluster_cannot_score_below_half():
+    """With two owners the score is 0.5 even when nothing is shared.
+
+    Any distinctive token is held by at least one of the two owners, so the
+    floor is 1/2. The evidence string then reads "1 of 2 owners share 'x'",
+    which is no evidence at all. Street clusters land in the medium band
+    (0.3–0.6) because of it, which is the intended reading; PO-box clusters
+    would clear the 0.5 bar, but they are already auto-kept at n<=8.
+    """
+    score, evidence = name_stem_cohesion(["cardiff stand llc", "funkhouse llc"])
+    assert score == 0.5
+    assert "1 of 2" in evidence
+
+
+def test_numeric_token_can_win_the_cohesion_vote():
+    """Digits count as distinctive tokens.
+
+    Real case: "MMJ 18 LLC" + "GET'M 18 LLC" + "Estate of Nabih Tablie"
+    scores 0.667 on the token '18'. Street numbers and sequence numbers in
+    LLC names are weak identity evidence, but no cluster in the emitted set
+    is held together by a numeric token alone, so the tokenizer keeps them.
+    """
+    score, evidence = name_stem_cohesion(["mmj 18 llc", "get m 18 llc", "estate of nabih tablie"])
+    assert "'18'" in evidence
+    assert score > 0.6
+
+
+# --- classify_service_address (NYS DOS join) ----------------------------
+
+def test_service_address_registered_agent_at_threshold():
+    """The registered-agent test is >=, so exactly 100 entities qualifies."""
+    assert classify_service_address(REGISTERED_AGENT_THRESHOLD, "street") == "registered_agent"
+    assert classify_service_address(REGISTERED_AGENT_THRESHOLD - 1, "street") == "unknown"
+
+
+def test_service_address_shared_owner_below_threshold():
+    """Strictly fewer than 30 entities at a street address reads as a real
+    shared owner; exactly 30 is already the uninformative middle band."""
+    assert classify_service_address(SHARED_OWNER_THRESHOLD - 1, "street") == "shared_owner"
+    assert classify_service_address(SHARED_OWNER_THRESHOLD, "street") == "unknown"
+    assert classify_service_address(0, "street") == "shared_owner"
+
+
+def test_service_address_po_box_never_shared_owner():
+    """DOS process addresses are street addresses, so a PO box never
+    matches and its zero count carries no information."""
+    assert classify_service_address(0, "po_box") == "unknown"
+    assert classify_service_address(29, "po_box") == "unknown"

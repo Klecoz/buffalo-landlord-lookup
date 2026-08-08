@@ -41,3 +41,74 @@ dead ends. Not a changelog; see git history for that.
 - Baseline `meta.json` (2026-05-10): parcels 93,069 · owners 65,089 · clusters
   {high 1330, medium 855, low 19, dropped 4} · violations matched 220,068 ·
   demolitions matched 8,342.
+
+## 2026-08-07 — LLC matching audit (Item 2)
+
+Audited against the emitted 2026-05-10 dataset: all 65,089 owner records and
+all 2,204 operator clusters (25 high + 25 medium sampled by slug stride, all
+19 low read in full, plus every PO-box auto-high, every alter-ego, and every
+cluster the NYS DOS join flagged as a registered-agent address).
+
+### Heuristics that checked out clean — no code change
+
+- **Business-suffix canonicalization is complete for this roll.** Every LLC /
+  LP / LLP / CORP / INC spelling present collapses correctly. The `\bl ?p\b`
+  and `\bl ?l ?p\b` patterns share a prefix and the shorter one runs first,
+  but the two-pass rewrite still lands "L L P", "L.L.P." and "LLP" on the same
+  key.
+- **No accent folding is needed.** Zero of 65,089 owner records contain a
+  non-ASCII character. `\w` is Unicode-aware, so a name like "José" would
+  survive punctuation stripping and simply not match "Jose" — dead code risk,
+  not a live bug.
+- **"Trustee" → "Trust" is safe here.** 15 owners spell it "Trustee(s)". No
+  normalized key is reachable from both a "Trustee" spelling and a
+  differently-owned "Trust" spelling, so the fold merges nothing wrong.
+- **`\bl ?p\b` does absorb the tail of a spaced-out acronym**: "H.E.L.P.
+  Buffalo Inc" keys as `h e lp buffalo inc`. Cosmetic only — both spellings of
+  that owner in the roll produce the identical key, so no split and no merge.
+  One owner, three parcels.
+- **All 19 low-confidence clusters are correctly labelled.** Each is a genuine
+  attorney / property-manager / filing-service pool (617 Main St, 266 Elmwood
+  Ave, 1580 Genesee St, …) that the UI should show as weak evidence.
+- **The alter-ego rule is sound where a real person is involved.** Spot-checked
+  30 of 262; the person + LLC pairs at a shared street address are exactly the
+  unmasking signal the site exists to surface.
+- **The DOS 30–99 "unknown" band is inert by design.** 74 clusters sit in it.
+  It neither rescues nor demotes, which is the intended reading of "we have no
+  evidence either way" — no threshold tuning warranted.
+- **Co-owner noise suppression never fires on real data.** The most widely
+  shared co-owner key appears in 3 distinct operators, well under
+  MAX_OPERATORS_PER_CO_OWNER = 5. The keys that reach 3 are church-name
+  fragments split out of ADD_OWNER ("In Christ", "Non-Trans", "Baptist
+  Church"), not common human names. Total cross-cluster links published: 58
+  across 42 clusters. Lowering the threshold would suppress genuine
+  two-operator human links and still miss these, so the threshold stays.
+
+### Known limitations, measured but deliberately not fixed
+
+- **A two-owner cluster can never score below 0.5.** The cohesion formula is
+  "fraction of owners sharing the top token", so with n=2 the floor is 1/2 and
+  the evidence string reads "1 of 2 owners share 'x'" — which is no evidence.
+  Street pairs land in the medium band anyway, so the score is not misleading
+  in the UI, but the evidence sentence is weaker than it looks.
+- **Business-suffix inconsistency splits 159 owner groups** (325 owners, 990
+  parcels) where the same base name appears with and without a suffix, or with
+  a different one: "Nightfall Enterprises Inc" vs "Nightfall Enterprises LLC",
+  "Madonna of the Streets" vs "Madonna of the Streets Inc". Operator
+  clustering already reunites 69 of those groups (478 parcels); 90 groups /
+  512 parcels / ~0.55% of all parcels stay split. Not fixed: stripping the
+  suffix from the matching key would merge legally distinct entities ("Howlader
+  Corp" and "Howlader Inc" are separate filings), and that is a worse error
+  than the split for an accountability site.
+- **The mailing-address key includes both city and ZIP, and the roll is
+  inconsistent about both.** 3842 Harlem Rd 14215 appears as both "BUFFALO"
+  and "CHEEKTOWAGA" and forms two separate clusters
+  (`m-perets-industries-llc`, `first-services-inc`) at one physical address —
+  which also splits the NYS DOS entity count for that address across two keys.
+  237 Main St appears under both 14202 and 14203 for the same reason. Dropping
+  either component would fix one split and cause another (same street number
+  in two towns), so the key is unchanged.
+- **The assessment roll truncates owner names at 30 characters.** "Niagara
+  Frontier Transportatio", "Geleynse Whelchel Family Livin", "Highland
+  Properties of Bflo.In". These split at the owner level and are re-joined
+  only by the operator layer.

@@ -81,3 +81,21 @@ def test_suppress_keeps_at_threshold():
     index = {key: [f"op-{i}" for i in range(MAX_OPERATORS_PER_CO_OWNER)]}
     filtered = suppress_common_names(index)
     assert key in filtered
+
+
+def test_suppress_lets_a_three_operator_collision_through():
+    """The threshold is deliberately loose, and on real data it never fires.
+
+    A name common enough to appear as co-owner on three unrelated operators
+    is still published as a cross-cluster link. Audited 2026-08-07: the most
+    widely shared co-owner key in the emitted set appears in 3 operators, so
+    MAX_OPERATORS_PER_CO_OWNER (5) suppresses nothing at all. The keys that
+    do reach 3 are organization fragments ("In Christ", "Non-Trans") split
+    out of long church names by the ADD_OWNER field, not common human names
+    — so the residual noise is a person/organization discrimination problem,
+    not a threshold problem. Lowering the threshold to 2 would suppress
+    genuine two-operator human links instead.
+    """
+    key = frozenset({"IN", "CHRIST"})
+    index = {key: ["op-a", "op-b", "op-c"]}
+    assert suppress_common_names(index) == index
