@@ -431,11 +431,16 @@ NOT deployed — deploy is a single atomic step at the end of the effort
 
 `selectParcel` read a parcel's properties from `map.querySourceFeatures`,
 which only returns features from tiles already loaded *in the current
-viewport*. A `#/parcel/:id` URL opened cold — exactly what the dossier's
-"Copy link" button hands out — lands on the default city-wide view, matches
-nothing, and rendered "Couldn't load that parcel — try zooming in and
-clicking again". Every shared dossier link was broken, and the message
-blamed the reader's zoom level for a lookup problem.
+viewport*. `selectParcel` writes `#/parcel/:id` into the address bar on every
+map click, so that URL is what anyone copies, bookmarks, or reloads — and
+opened cold it lands on the default city-wide view, matches nothing, and
+rendered "Couldn't load that parcel — try zooming in and clicking again".
+Every shared or reloaded dossier link was broken, and the message blamed the
+reader's zoom level for a lookup problem.
+
+(The dossier is also the one view with no "Copy link" button — the three
+`_panelHeadActionsHtml` call sites are portfolio, operator, and leaderboards.
+Now that parcel URLs resolve, that gap is worth closing in the desktop pass.)
 
 The address index already carries a centroid for all 93,069 parcels, so the
 parcel can be found by jumping the camera there and re-querying once the map

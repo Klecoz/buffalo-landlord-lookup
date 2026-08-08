@@ -42,7 +42,8 @@ counter gives for free.
 
 `selectParcel` falls back to the centroid in `state.addressIndex` and
 re-queries the map source after an idle wait, rather than reading the dossier
-out of a smaller side-channel.
+out of a smaller side-channel. This matters for any reload or shared link,
+since every map click rewrites the address bar to `#/parcel/:id`.
 
 The alternative was to render what the address index already holds (address,
 owner slug, coordinates) and skip the map entirely. Rejected: the dossier
