@@ -750,3 +750,40 @@ the panel at the 80px floor and snaps to peek. The one gap is velocity — a
 60px flick up from peek snaps back to peek, because `endDrag` only measures
 final position. Left alone; velocity tracking is the gesture-logic change this
 pass was scoped out of.
+
+### The stacked portfolio card labelled its own heading
+
+The mobile card treatment turns each `<td>` into a labelled row via
+`data-label` and `::before`, and styles `td:first-child` as a full-width bold
+title with a rule under it. Both applied to the address cell, so the card's
+heading read "Address  293 Ontario St" — the label restating what the
+treatment above it already established. The remaining three cells do need
+their labels; only the first one is self-evident.
+
+### The info tip only knew how to hang below its button
+
+`showInfoTip` clamped `left` (`Math.min(rect.left, innerWidth - 220)`, against
+a hard-coded 220px width) and did not clamp `top` at all. A button low in the
+viewport put the tip past the bottom edge — reproduced by pinning an ⓘ at
+`innerHeight - 30`, which placed a 113px tip at y 818–931 on an 844px screen.
+It is appended to `<body>`, so nothing clips it back into view.
+
+Separately, the tip is positioned once against the viewport and then left
+alone. Scrolling the panel or resizing the window slid its button out from
+under it, stranding an explanation over unrelated content — after a resize
+from 768 to 390 it was still sitting over the map.
+
+### Checked and sound: search dropdown, safe areas, deep links
+
+The search listbox is `max-height: 40vh` below a row ending at y 114 — 452px
+bottom edge on an 844px screen, 410px on a 740px one, both clear of the
+~300–340px an iOS keyboard takes. `#search` is `font-size: 16px`, so iOS will
+not auto-zoom the field. A cold deep link to `#/parcel/<id>` lands the sheet at
+half with the dossier readable.
+
+`env(safe-area-inset-*)` is inert here: `index.html` has no `viewport-fit=cover`,
+so the page is letterboxed into the safe area and nothing can fall under a
+notch or home indicator. The `max(38px, env(safe-area-inset-top, 12px))` on
+`sheet-full` resolves to its 38px floor. Opting into edge-to-edge would mean
+re-testing every fixed-position edge element on hardware; the letterboxed
+default is correct as it stands.

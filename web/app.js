@@ -845,7 +845,7 @@ function renderPortfolio(portfolio) {
       <td data-label="Address">${escapeHtml(p.addr)}</td>
       <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
       <td data-label="311" class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
-      <td data-label="Demo" class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : "—"}</td>
+      <td data-label="Demolished" class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : "—"}</td>
     </tr>
   `).join("");
 
@@ -1067,10 +1067,18 @@ function showInfoTip(infoBtn) {
   tipEl.textContent = infoBtn.dataset.infoTip;
   tipEl.hidden = false;
   infoBtn.setAttribute("aria-expanded", "true");
-  // Position below the button
+  // Prefer below the button, but flip above when the button sits low in the
+  // sheet — the tip is appended to <body>, so nothing clips it back into view.
   const rect = infoBtn.getBoundingClientRect();
-  tipEl.style.top = `${rect.bottom + window.scrollY + 4}px`;
-  tipEl.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
+  const tip = tipEl.getBoundingClientRect();
+  const M = 8;
+  let top = rect.bottom + 4;
+  if (top + tip.height > window.innerHeight - M) {
+    top = Math.max(M, rect.top - tip.height - 4);
+  }
+  tipEl.style.top = `${top + window.scrollY}px`;
+  tipEl.style.left =
+    `${Math.max(M, Math.min(rect.left, window.innerWidth - tip.width - M))}px`;
 }
 
 function hideInfoTip() {
@@ -1089,6 +1097,8 @@ function setupInfoTipDismiss() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") hideInfoTip();
   });
+  window.addEventListener("resize", hideInfoTip);
+  $("#panel").addEventListener("scroll", hideInfoTip);
 }
 
 function renderLeaderboards() {
@@ -1368,7 +1378,7 @@ function renderOperator(op) {
       <td data-label="Address">${escapeHtml(p.addr)}</td>
       <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
       <td data-label="311" class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
-      <td data-label="Demo" class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : "—"}</td>
+      <td data-label="Demolished" class="num ${p.demolished ? "bad" : ""}">${p.demolished ? "✗" : "—"}</td>
     </tr>
   `).join("");
 

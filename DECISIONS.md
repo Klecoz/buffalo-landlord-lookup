@@ -2,6 +2,60 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — The tablet colophon keeps its clipped tail
+
+Between 481 and 880px the colophon spans the full width under an opaque 360px
+panel, so its last field is covered — at 844px it reads "311 data through 20".
+Ending the box at the panel edge (`right: 360px`) does fix that, and was tried:
+the narrower box wraps the footer from two lines to three (79px tall), and at
+`bottom: 0` it then grows up into the legend at `bottom: 44px`. On a 844×390
+landscape window that trades a clipped date fragment for a footer eating a
+fifth of the screen and colliding with the key.
+
+Padding the box instead of narrowing it does nothing — the children are nowrap
+flex items and overflow the padding.
+
+Left as is. The refresh date is also in the masthead, which is where a reader
+looks for it, and the sources line is attribution this tool should not drop to
+save 25px.
+
+Choices made and why, with rejected alternatives. Newest first.
+
+## 2026-08-08 — "Demo" is a column head, not a card label
+
+The desktop table head stays "Demo" because that column is 40px wide. The
+stacked card carries `data-label="Demolished"`, which is what that attribute is
+for — it exists only to feed the mobile `::before`. Reading "Demo —" on a card
+with room for the word invites "demonstration".
+
+Rejected: overriding the text in CSS with
+`td[data-label="Demo"]::before { content: "Demolished" }`. That hides a string
+the reader sees inside a selector that matches on a different string.
+
+## 2026-08-08 — The info tip flips rather than shrinks
+
+When the tip would cross the bottom edge it is placed above its button instead.
+The alternative was to cap its height and let it scroll, which turns a
+two-line explanation into a scroll container. Horizontal placement now clamps
+against the tip's measured width rather than the hard-coded 220px, and keeps an
+8px margin off both edges.
+
+It is also dismissed on window resize and on panel scroll. The tip is absolutely
+positioned against the viewport with no reflow of its own, so following its
+button would mean tracking it; dismissing is the honest answer to "the thing
+this explains just moved".
+
+## 2026-08-08 — Safe-area insets stay inert
+
+`index.html` deliberately keeps `viewport-fit` unset. Without it the page is
+letterboxed into the safe area, which means no fixed element can end up under a
+notch or a home indicator — the correct outcome, reached by not opting in.
+Adding `viewport-fit=cover` would put the burden on every bottom-pinned element
+here (sheet, colophon, legend, chip, reopen pill) and cannot be verified
+without a notched device.
+
+Choices made and why, with rejected alternatives. Newest first.
+
 ## 2026-08-08 — The tablet band gets wrapping, not a wider panel
 
 Between 481 and 880px the five board pills and the two kind-toggle tabs are

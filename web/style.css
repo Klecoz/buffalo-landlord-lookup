@@ -1425,6 +1425,9 @@ body.panel-collapsed #panel-collapse {
     margin-bottom: 4px;
     display: block;          /* address line is full width */
   }
+  /* It reads as the card's heading, so labelling it "Address" states the
+     obvious twice. The remaining cells still need their labels. */
+  table.portfolio td:first-child[data-label]::before { content: none; }
   table.portfolio td[data-label]::before {
     content: attr(data-label);
     font-family: var(--sans);
