@@ -274,7 +274,7 @@ def _build_operator_clusters(
                 "evidence": (
                     verdict["evidence"]
                     + f" — but NYS DOS records {sa_count:,} businesses at this address, "
-                    "so it is a registered-agent or filing-service pool"
+                    "so it is likely a registered-agent or filing-service pool"
                 ),
             }
 

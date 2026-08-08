@@ -2,6 +2,36 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — A generated evidence line says "likely" rather than asserting
+
+The medium→low demotion in `emit.py` appended this to a cluster's evidence:
+"— but NYS DOS records 123 businesses at this address, so it **is** a
+registered-agent or filing-service pool". The audit row rendered a few
+centimetres below it, in the same panel, describes the same classification as
+"**likely** a registered-agent or filing-service address". One flat assertion
+and one hedge, about one threshold comparison, in one view.
+
+Taken: add "likely" to the generated line. The classification is
+`nys_dos_entity_count >= 100` — an inference from a tuned threshold, not a
+verified fact, and the sentence names a real address where real businesses
+receive mail. The site's register is hedged wherever inference is uncertain,
+and this was the one string that broke it.
+
+Rejected: leaving it, on the grounds that Item 9's brief says not to change the
+information content of the hedges. That instruction protects the cautions from
+being weakened; this change moves in the opposite direction, and brings the
+string into line with how the identical fact is already worded in the UI.
+
+Rejected: dropping "likely" from the UI string instead, to make the pair agree
+the other way. That would have the tool assert a filing-service pool from a
+threshold count.
+
+This was the only pipeline string changed, so artifacts were regenerated with
+`python run.py --no-fetch` (44.5s). Verified after: 17 operator JSON files carry
+the new wording and none carry the old. `web/data/` is not tracked by git
+(`git ls-files web/data` is empty), so the regeneration does not appear in the
+diff — it matters for Item 11's deploy.
+
 ## 2026-08-08 — Duplicated hedges are trimmed at the conditional site, not the permanent one
 
 Two cautions were each rendered twice inside one panel. Where a hedge appeared
