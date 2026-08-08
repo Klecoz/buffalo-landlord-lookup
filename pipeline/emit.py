@@ -494,7 +494,6 @@ def _aggregate_owners(
         portfolio_open_violations = 0
         portfolio_complaints_311 = 0
         portfolio_value = 0
-        oldest_violation = None
         # Per-owner tally of violation code_section across all parcels.
         # Cluster-level aggregation later sums these Counters across the
         # cluster's constituent owners.
@@ -512,9 +511,6 @@ def _aggregate_owners(
             portfolio_open_violations += parcel["code_violations_open"]
             portfolio_complaints_311 += parcel["complaints_311_12mo"]
             portfolio_value += parcel.get("full_market_val", 0) or 0
-            if parcel["last_violation_date"]:
-                if oldest_violation is None or parcel["last_violation_date"] < oldest_violation:
-                    oldest_violation = parcel["last_violation_date"]
             # Tallied by the join over every violation. Re-deriving it from
             # parcel["violations"] would only see the 25 rows kept for the
             # dossier, under-counting exactly the heaviest portfolios.
@@ -569,7 +565,6 @@ def _aggregate_owners(
             "all_violations": portfolio_violations,
             "complaints_311_12mo": portfolio_complaints_311,
             "total_value": portfolio_value,
-            "oldest_violation": oldest_violation,
             "props": sorted(props, key=lambda x: -x["concern_score"]),
             "co_owner_counts": co_owner_counts,
             "co_owner_displays": co_owner_displays,
@@ -674,7 +669,6 @@ def _write_owner_files(
             "total_properties": agg["properties"],
             "total_violations": agg["all_violations"],
             "total_value": agg["total_value"],
-            "oldest_violation": agg["oldest_violation"],
             "operator_slug": operator_slug,
             "operator_confidence": operator_confidence,
             "top_violation_types": agg.get("top_violation_types") or [],

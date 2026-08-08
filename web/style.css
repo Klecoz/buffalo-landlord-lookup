@@ -799,9 +799,6 @@ body.panel-collapsed #panel-collapse {
 #filter-chip .clear { flex: 0 0 auto; }
 
 /* ----- Filter pills (leaderboard board tabs styled as chips) ------------ */
-/* .filter-pill is used when JS renders them as pills; .tabs button gets
-   chip treatment inside the leaderboard panel. */
-.filter-pill,
 #panel .tabs button {
   padding: 8px 14px;
   border-radius: 18px;
@@ -814,27 +811,21 @@ body.panel-collapsed #panel-collapse {
 }
 /* The chip row doesn't need the underline rule meant for tab-style buttons.
    Strip it and give the pill row breathing room above and below. */
-#panel .tabs:has(button.filter-pill),
 #panel .tabs:has(button[data-board]) {
   border-bottom: 0;
   gap: 8px;
   padding: 4px 0;
   margin: 12px 0 18px;
 }
-.filter-pill[aria-pressed="true"],
-.filter-pill.active,
 #panel .tabs button.active {
   background: var(--ink);
   color: var(--paper);
   border-color: var(--ink);
 }
-.filter-pill:hover,
 #panel .tabs button:hover {
   color: var(--ink);
   border-color: var(--ink-2);
 }
-.filter-pill[aria-pressed="true"]:hover,
-.filter-pill.active:hover,
 #panel .tabs button.active:hover {
   background: var(--ink-2);
   border-color: var(--ink-2);

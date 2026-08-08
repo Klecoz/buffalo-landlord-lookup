@@ -100,7 +100,6 @@ def _owner_agg(slug, display, mail_keys, properties, open_v=0, all_v=0, c311=0, 
         "all_violations": all_v,
         "complaints_311_12mo": c311,
         "total_value": value,
-        "oldest_violation": None,
         "props": [{"id": f"{slug}-{i}", "concern_score": 0} for i in range(properties)],
     }
 

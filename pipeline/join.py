@@ -125,26 +125,6 @@ RAW_FILES = (
 )
 
 
-# 311 types/subjects we count as housing-quality complaints. Substring match.
-HOUSING_311_KEYWORDS = (
-    "no heat",
-    "heat",
-    "hot water",
-    "rodent",
-    "vermin",
-    "garbage",
-    "trash",
-    "illegal occupancy",
-    "illegal conversion",
-    "dwelling",
-    "housing",
-    "lead paint",
-    "mold",
-    "plumbing",
-    "infestation",
-)
-
-
 def _load_json(path: Path) -> Any:
     with path.open() as f:
         return json.load(f)
@@ -158,14 +138,6 @@ def _parse_date(s: str | None) -> datetime | None:
         return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=timezone.utc)
     except ValueError:
         return None
-
-
-def _is_housing_311(row: dict) -> bool:
-    blob = " ".join(
-        str(row.get(k, "") or "").lower()
-        for k in ("subject", "reason", "type", "object_type")
-    )
-    return any(kw in blob for kw in HOUSING_311_KEYWORDS)
 
 
 def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict]]:
