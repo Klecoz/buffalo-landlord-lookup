@@ -2,6 +2,28 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — Click targets carry data attributes, not inline handlers
+
+Every `onclick="fn('${escapeHtml(x)}')"` template is gone; the value lives in
+a `data-*` attribute and `showPanel` binds the listener after injecting the
+HTML, reusing the pattern already there for "Highlight on map".
+
+The audit found nothing exploitable — the interpolated values were slugs
+(`[a-z0-9-]` by pipeline construction), parcel ids, and two hardcoded scope
+literals. The change is about where the guarantee lives. HTML entity escaping
+is the wrong defense inside a JS-string context (the browser decodes entities
+before the JS parser sees them), so those sites were relying on a property of
+the *data* rather than of the *code*. Parcel ids in particular are copied
+verbatim from the assessment roll's SBL field with no pipeline test pinning
+their alphabet.
+
+Rejected: one delegated listener on `#panel` dispatching by selector. It
+would have replaced the existing per-render wiring for leaderboard rows and
+LLC lists too — a rebuild of the event system for no correctness gain.
+
+Rejected: leaving the slug sites alone with a comment stating the invariant
+(the option the plan allowed). The comment now states the invariant *and*
+there are no exceptions to remember.
 ## 2026-08-08 — One view token guards all three async views
 
 A single module-level `_viewToken`, bumped on entry to `selectParcel`,

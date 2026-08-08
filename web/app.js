@@ -37,6 +37,11 @@ function fmtDate(s) {
   if (!s) return "";
   return s.slice(0, 10);
 }
+// HTML-context escaping only. The browser decodes entities before the JS
+// parser sees an inline handler, so this is the wrong layer of defense inside
+// an onclick="fn('…')" string — which is why no template here interpolates a
+// value into one. Anything clickable carries its value in a data-* attribute
+// and is wired up by a listener in showPanel.
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
@@ -106,11 +111,11 @@ function complaints311Label() {
 }
 
 function _copyLinkBtnHtml() {
-  return `<button class="copy-link-btn" onclick="window.copyCurrentUrl(this)" title="Copy a shareable link to this view">Copy link</button>`;
+  return `<button class="copy-link-btn" title="Copy a shareable link to this view">Copy link</button>`;
 }
 
 function _downloadCsvBtnHtml(scope) {
-  return `<button class="csv-btn" onclick="window.downloadPortfolioCsv('${escapeHtml(scope)}', this)" title="Download portfolio as CSV">Download CSV</button>`;
+  return `<button class="csv-btn" data-csv-scope="${escapeHtml(scope)}" title="Download portfolio as CSV">Download CSV</button>`;
 }
 
 function _panelHeadActionsHtml(scope) {
@@ -251,10 +256,35 @@ function showPanel(html) {
       }
     } catch {}
   }
-  // Re-wire any "Highlight on map" buttons that were just rendered.
+  // Re-wire the controls that were just rendered. Every one of these carries
+  // its argument in a data-* attribute rather than an inline onclick, so no
+  // record value is ever interpolated into a JS-string context.
   $$("#panel .highlight-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       window.toggleMapHighlight(btn.dataset.kind, btn.dataset.slug, btn.dataset.label);
+    });
+  });
+  $$("#panel .copy-link-btn").forEach(btn => {
+    btn.addEventListener("click", () => window.copyCurrentUrl(btn));
+  });
+  $$("#panel .csv-btn").forEach(btn => {
+    btn.addEventListener("click", () => window.downloadPortfolioCsv(btn.dataset.csvScope, btn));
+  });
+  $$("#panel [data-open-owner]").forEach(el => {
+    el.addEventListener("click", () => window.openPortfolio(el.dataset.openOwner));
+  });
+  $$("#panel [data-open-operator]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();   // the audit-list variant is an <a href="#/operator/…">
+      window.openOperator(el.dataset.openOperator);
+    });
+  });
+  $$("#panel .service-addr-badge").forEach(btn => {
+    btn.addEventListener("click", () => window.openAuditDisclosure());
+  });
+  $$("#panel tr[data-parcel-id]").forEach(tr => {
+    tr.addEventListener("click", () => {
+      window.gotoParcel(tr.dataset.parcelId, parseFloat(tr.dataset.lat), parseFloat(tr.dataset.lng));
     });
   });
 }
@@ -557,7 +587,7 @@ function renderDossier(props, dossier) {
   const owner = props.owner ? cleanOwnerName(props.owner) : "Owner not on record";
   const portfolioCta =
     props.portfolio_n > 1
-      ? `<button class="cta" onclick="window.openPortfolio('${escapeHtml(props.owner_slug)}')">
+      ? `<button class="cta" data-open-owner="${escapeHtml(props.owner_slug)}">
            This owner has ${props.portfolio_n - 1} other propert${props.portfolio_n - 1 === 1 ? "y" : "ies"} →
          </button>`
       : "";
@@ -762,7 +792,7 @@ function renderPortfolio(portfolio) {
     : "";
 
   const operatorCta = portfolio.operator_slug
-    ? `<button class="cta" onclick="window.openOperator('${escapeHtml(portfolio.operator_slug)}')">
+    ? `<button class="cta" data-open-operator="${escapeHtml(portfolio.operator_slug)}">
          Same mailing address as related LLCs →
        </button>`
     : "";
@@ -781,7 +811,7 @@ function renderPortfolio(portfolio) {
     : "";
 
   const rows = (portfolio.properties || []).map(p => `
-    <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
+    <tr data-parcel-id="${escapeHtml(p.id)}" data-lat="${p.lat ?? ""}" data-lng="${p.lng ?? ""}">
       <td data-label="Address">${escapeHtml(p.addr)}</td>
       <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
       <td data-label="311" class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>
@@ -1184,7 +1214,7 @@ function renderAuditDisclosure(op) {
   const linkedOpLines = (a.linked_operators || []).map(L => `
     <li><span class="audit-key">Linked operator</span>
       <a href="#/operator/${encodeURIComponent(L.operator_slug)}"
-         onclick="event.preventDefault(); window.openOperator('${escapeHtml(L.operator_slug)}')">${escapeHtml(L.operator_label)}</a>
+         data-open-operator="${escapeHtml(L.operator_slug)}">${escapeHtml(L.operator_label)}</a>
       <span class="sub">via ${escapeHtml(L.co_owner)} (${L.parcels} parcel${L.parcels === 1 ? "" : "s"} there)</span>
     </li>`).join("");
 
@@ -1260,8 +1290,7 @@ function renderOperator(op) {
     : "";
   const serviceAddrBadge = (op.audit && op.audit.service_address && op.audit.service_address.classification === "registered_agent")
     ? `<button type="button" class="service-addr-badge"
-         title="This mailing address registers ${(op.audit.service_address.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities — likely a registered-agent or filing-service pool. Click to see how these names are grouped."
-         onclick="window.openAuditDisclosure()">⚠ service address</button>`
+         title="This mailing address registers ${(op.audit.service_address.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities — likely a registered-agent or filing-service pool. Click to see how these names are grouped.">⚠ service address</button>`
     : "";
   const evidenceLine = op.evidence
     ? `<p class="evidence">${escapeHtml(op.evidence)}</p>`
@@ -1289,7 +1318,7 @@ function renderOperator(op) {
   }).join("");
 
   const propsRows = (op.properties || []).slice(0, 200).map(p => `
-    <tr onclick="window.gotoParcel('${escapeHtml(p.id)}', ${p.lat}, ${p.lng})">
+    <tr data-parcel-id="${escapeHtml(p.id)}" data-lat="${p.lat ?? ""}" data-lng="${p.lng ?? ""}">
       <td data-label="Address">${escapeHtml(p.addr)}</td>
       <td data-label="Open" class="num ${p.violations_open > 0 ? "bad" : ""}">${p.violations_open}</td>
       <td data-label="311" class="num ${p.complaints_311_12mo > 2 ? "warn" : ""}">${p.complaints_311_12mo}</td>

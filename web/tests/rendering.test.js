@@ -536,6 +536,69 @@ describe('renderLeaderboards', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Event wiring — every clickable control carries its argument in a data-*
+// attribute and is bound by showPanel. Nothing is interpolated into an inline
+// onclick, where HTML escaping is the wrong layer of defense (the browser
+// decodes entities before the JS parser runs).
+// ---------------------------------------------------------------------------
+
+describe('rendered panels contain no inline event handlers', () => {
+  const panelHtml = () => document.getElementById('panel-content').innerHTML
+
+  it('dossier has no onclick attribute', () => {
+    t.renderDossier(
+      { id: 'p1', addr: '1 Main St', owner: 'ACME LLC', owner_slug: 'acme-llc',
+        violations_open: 1, violations_total: 2, complaints_311_12mo: 0, portfolio_n: 4 },
+      { violations: [], complaints: [] },
+    )
+    expect(panelHtml()).not.toContain('onclick')
+  })
+
+  it('owner portfolio has no onclick attribute', () => {
+    t.renderPortfolio({
+      _slug: 'acme-llc', owner_display: 'ACME LLC', operator_slug: 'acme-op',
+      total_properties: 1, total_violations: 0, total_value: 0,
+      properties: [{ id: 'p1', addr: '1 Main St', lat: 42.88, lng: -78.87,
+        violations_open: 0, complaints_311_12mo: 0, demolished: false }],
+    })
+    expect(panelHtml()).not.toContain('onclick')
+  })
+
+  it('operator view has no onclick attribute', () => {
+    t.renderOperator({
+      operator_slug: 'acme-op', operator_label: 'ACME Group', mailing_address: '1 A St',
+      total_properties: 1, total_open_violations: 0, total_all_violations: 0,
+      total_complaints_311_12mo: 0, total_value: 0,
+      owners: [], properties: [{ id: 'p1', addr: '1 Main St', lat: 42.88, lng: -78.87,
+        violations_open: 0, complaints_311_12mo: 0, demolished: false }],
+      audit: { service_address: { classification: 'registered_agent', nys_dos_entity_count: 900, threshold: 100 } },
+    })
+    expect(panelHtml()).not.toContain('onclick')
+  })
+
+  it('routes a portfolio row click through the parcel id in its data attribute', () => {
+    t.renderPortfolio({
+      _slug: 'acme-llc', owner_display: 'ACME LLC',
+      total_properties: 1, total_violations: 0, total_value: 0,
+      properties: [{ id: 'parcel-42', addr: '1 Main St', lat: 42.88, lng: -78.87,
+        violations_open: 0, complaints_311_12mo: 0, demolished: false }],
+    })
+    const row = document.querySelector('#panel tr[data-parcel-id]')
+    expect(row.dataset.parcelId).toBe('parcel-42')
+    row.click()
+    expect(t.state.map.flyTo).toHaveBeenCalledWith({ center: [-78.87, 42.88], zoom: 18 })
+  })
+
+  it('carries the CSV scope on the button instead of in a handler string', () => {
+    t.renderPortfolio({
+      _slug: 'acme-llc', owner_display: 'ACME LLC',
+      total_properties: 0, total_violations: 0, total_value: 0, properties: [],
+    })
+    expect(document.querySelector('#panel .csv-btn').dataset.csvScope).toBe('portfolio')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Leaderboard info tooltip — the document-level dismissal handlers are
 // registered once at bootstrap. Registering them per render leaked two
 // listeners on every tab switch.

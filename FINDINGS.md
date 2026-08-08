@@ -508,3 +508,18 @@ The counter tiles said "311 housing 12mo" and "311 (12mo)", which reads as
 the last 12 months from today. The window ends at the feed's max date
 (2024-05-10, frozen upstream), so the tiles now carry that anchor, derived
 from `meta.complaints_311_max_date` rather than hardcoded.
+
+### Inline onclick handlers — audit result
+
+Seven templates interpolated a value into an `onclick="fn('…')"` string. The
+values were slugs (`[a-z0-9-]`, pinned by pipeline tests), parcel ids, or the
+literals `"portfolio"`/`"operator"` — so none were exploitable, and the
+`scope` argument at the old line 101 traces to two hardcoded call sites in
+`_panelHeadActionsHtml`, not to data.
+
+The parcel id is the one value with no pipeline-level guarantee: it is copied
+straight from the assessment roll's SBL field. It happens to be strictly
+alphanumeric across all 93,069 parcels today, but nothing enforces that, and
+`escapeHtml` is the wrong layer inside a JS-string context anyway — the
+browser decodes entities before the JS parser runs. All seven sites now carry
+their argument in a `data-*` attribute.
