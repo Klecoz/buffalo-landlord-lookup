@@ -551,3 +551,14 @@ therefore serves the local `index.html`/`app.js` against **live R2 data**,
 which during this effort was still the May build. Move it aside to exercise
 `web/data/`. Browser caching of `config.js` survives the file being removed —
 use a fresh port.
+
+### Sheet drag could strand itself if the pointer vanished
+
+`setPointerCapture` throws `NotFoundError` when the pointer id is no longer
+active. It ran before the drag state was consistent, so the throw left
+`dragging = true`, the `dragging` class applied, and the CSS transition
+disabled — a sheet that no longer responds to the handle. The matching
+`releasePointerCapture` was already wrapped for the same reason.
+
+Only reproduced with synthetic `PointerEvent`s (`dispatchEvent` supplies no
+active pointer), so this is defensive rather than an observed field failure.

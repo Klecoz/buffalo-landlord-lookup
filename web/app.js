@@ -1616,7 +1616,10 @@ function setupBottomSheet() {
     startH = panel.getBoundingClientRect().height;
     panel.style.transition = "none";
     panel.classList.add("dragging");
-    handle.setPointerCapture(e.pointerId);
+    // Throws if the pointer is already gone by the time this runs; the sheet
+    // would then be stuck mid-drag with the transition disabled. The matching
+    // release below is guarded for the same reason.
+    try { handle.setPointerCapture(e.pointerId); } catch {}
     e.preventDefault();
   });
   handle.addEventListener("pointermove", (e) => {
