@@ -479,3 +479,11 @@ Reproduced by delaying `/owners/` by 700ms and navigating owner → operator.
 compared it after awaiting — the guard was dead code. One module-level
 `_viewToken` now covers all three views and is compared at every resume
 point.
+
+### The leaderboard info tooltip leaked two document listeners per render
+
+`renderLeaderboards` registered document-level `click` and `keydown` handlers
+inside its per-button loop, and it re-runs on every tab and kind switch. Ten
+switches on a phone added 40 document listeners, each closing over a button
+already detached from the DOM. The dismissal handlers are now registered once
+at bootstrap; only the per-button click handler is re-bound per render.

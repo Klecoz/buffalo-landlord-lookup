@@ -979,6 +979,43 @@ function _syncLeaderboardHash() {
   }
 }
 
+// ---------- leaderboard info tooltip (one shared popover) ----------
+function showInfoTip(infoBtn) {
+  let tipEl = document.getElementById("leaderboard-info-tip");
+  if (!tipEl) {
+    tipEl = document.createElement("div");
+    tipEl.id = "leaderboard-info-tip";
+    tipEl.className = "info-tip-popover";
+    tipEl.setAttribute("role", "tooltip");
+    document.body.appendChild(tipEl);
+  }
+  tipEl.textContent = infoBtn.dataset.infoTip;
+  tipEl.hidden = false;
+  infoBtn.setAttribute("aria-expanded", "true");
+  // Position below the button
+  const rect = infoBtn.getBoundingClientRect();
+  tipEl.style.top = `${rect.bottom + window.scrollY + 4}px`;
+  tipEl.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
+}
+
+function hideInfoTip() {
+  const tipEl = document.getElementById("leaderboard-info-tip");
+  if (tipEl) tipEl.hidden = true;
+  $$("#panel .info-btn").forEach(b => b.setAttribute("aria-expanded", "false"));
+}
+
+// Registered once at bootstrap. Registering these inside renderLeaderboards
+// leaked a pair of document listeners per render — every leaderboard tab
+// switch added two more, each closing over a button already detached.
+function setupInfoTipDismiss() {
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".info-btn")) hideInfoTip();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hideInfoTip();
+  });
+}
+
 function renderLeaderboards() {
   const isOperators = state.activeBoardKind === "operators";
   const data = isOperators ? state.topOperators : state.topOwners;
@@ -1052,44 +1089,17 @@ function renderLeaderboards() {
     </div>
   `);
 
-  // Wire ⓘ info tooltips (mobile only — desktop renders inline label text instead)
+  // Wire ⓘ info tooltips (mobile only — desktop renders inline label text
+  // instead). The buttons are rebuilt on every render so their own click
+  // handler belongs here; the document-level dismissal is registered once at
+  // bootstrap (see setupInfoTipDismiss).
   $$("#panel .info-btn").forEach(infoBtn => {
-    const tip = infoBtn.dataset.infoTip;
-    if (!tip) return;
-    // Create a shared singleton popover anchored near the button
-    const showTip = () => {
-      let tip_el = document.getElementById("leaderboard-info-tip");
-      if (!tip_el) {
-        tip_el = document.createElement("div");
-        tip_el.id = "leaderboard-info-tip";
-        tip_el.className = "info-tip-popover";
-        tip_el.setAttribute("role", "tooltip");
-        document.body.appendChild(tip_el);
-      }
-      tip_el.textContent = infoBtn.dataset.infoTip;
-      tip_el.hidden = false;
-      infoBtn.setAttribute("aria-expanded", "true");
-      // Position below the button
-      const rect = infoBtn.getBoundingClientRect();
-      tip_el.style.top = `${rect.bottom + window.scrollY + 4}px`;
-      tip_el.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
-    };
-    const hideTip = () => {
-      const tip_el = document.getElementById("leaderboard-info-tip");
-      if (tip_el) tip_el.hidden = true;
-      infoBtn.setAttribute("aria-expanded", "false");
-    };
+    if (!infoBtn.dataset.infoTip) return;
     infoBtn.addEventListener("click", (e) => {
       e.stopPropagation(); // don't fire kind-toggle parent
-      const tip_el = document.getElementById("leaderboard-info-tip");
-      const isOpen = tip_el && !tip_el.hidden && infoBtn.getAttribute("aria-expanded") === "true";
-      isOpen ? hideTip() : showTip();
-    });
-    document.addEventListener("click", (e) => {
-      if (!e.target.closest(".info-btn")) hideTip();
-    }, { once: false });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") hideTip();
+      const tipEl = document.getElementById("leaderboard-info-tip");
+      const isOpen = tipEl && !tipEl.hidden && infoBtn.getAttribute("aria-expanded") === "true";
+      if (isOpen) hideInfoTip(); else showInfoTip(infoBtn);
     });
   });
 
@@ -1655,6 +1665,7 @@ async function bootstrap() {
     renderLeaderboards();
   });
   setupPanelCollapse();
+  setupInfoTipDismiss();
   initMap();
   setupSearch();
   setupHashRouting();

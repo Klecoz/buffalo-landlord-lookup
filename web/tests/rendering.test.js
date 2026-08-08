@@ -534,3 +534,22 @@ describe('renderLeaderboards', () => {
     expect(document.getElementById('panel-content').textContent).toContain('No entries')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Leaderboard info tooltip — the document-level dismissal handlers are
+// registered once at bootstrap. Registering them per render leaked two
+// listeners on every tab switch.
+// ---------------------------------------------------------------------------
+
+describe('renderLeaderboards listener hygiene', () => {
+  it('adds no document-level listeners, however many times it runs', () => {
+    window.matchMedia = vi.fn(() => ({ matches: true }))   // phone → info buttons render
+    t.state.topOperators = { by_open_violations: [{ slug: 'a', label: 'A', owners_n: 1, properties: 1, open: 1, total_value: 0, confidence: 'high', evidence: 'e' }] }
+    t.state.topOwners = { by_open_violations: [] }
+    t.renderLeaderboards()
+    const spy = vi.spyOn(document, 'addEventListener')
+    for (let i = 0; i < 5; i++) t.renderLeaderboards()
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+})
