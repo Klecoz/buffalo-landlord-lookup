@@ -408,3 +408,50 @@ def test_join_violations_ignores_junk_short_sbl():
     matched, _ = _join_violations(by_addr, violations, by_sbl)
     assert matched == 0
     assert parcels[0]["code_violations_total"] == 0
+
+
+# --- parcel centroid ----------------------------------------------------
+
+
+def _geom_fc(geometry):
+    return {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "geometry": geometry,
+            "properties": {
+                "LOC_ST_NBR": "216", "LOC_STREET": "Landon",
+                "PRIMARY_OWNER": "X", "SBL": "AAA",
+            },
+        }],
+    }
+
+
+def test_polygon_centroid_ignores_the_closing_vertex():
+    """A GeoJSON ring repeats its first vertex to close. Averaging the raw
+    vertex list counts that corner twice and drags the map pin ~20% of the
+    way toward it on a 4-corner lot."""
+    square = [[0, 0], [0, 2], [2, 2], [2, 0], [0, 0]]
+    parcels, _ = _build_parcel_records(
+        _geom_fc({"type": "Polygon", "coordinates": [square]})
+    )
+    assert parcels[0]["lng"] == 1.0
+    assert parcels[0]["lat"] == 1.0
+
+
+def test_multipolygon_centroid_ignores_the_closing_vertex():
+    square = [[0, 0], [0, 2], [2, 2], [2, 0], [0, 0]]
+    parcels, _ = _build_parcel_records(
+        _geom_fc({"type": "MultiPolygon", "coordinates": [[square]]})
+    )
+    assert parcels[0]["lng"] == 1.0
+    assert parcels[0]["lat"] == 1.0
+
+
+def test_polygon_centroid_handles_unclosed_ring():
+    """Not every producer closes the ring; an open ring must not lose a vertex."""
+    parcels, _ = _build_parcel_records(
+        _geom_fc({"type": "Polygon", "coordinates": [[[0, 0], [0, 2], [2, 2], [2, 0]]]})
+    )
+    assert parcels[0]["lng"] == 1.0
+    assert parcels[0]["lat"] == 1.0

@@ -61,6 +61,26 @@ def _index_lookup(by_addr: dict, addr_norm: str):
     return by_addr.get(stripped) if stripped != addr_norm else None
 
 
+def _ring_centroid(rings: list) -> tuple[float | None, float | None]:
+    """Mean vertex of a polygon's outer ring, as (lng, lat).
+
+    Rough on purpose — the map only needs a pin inside the lot, not a true
+    area centroid, so holes and secondary rings are ignored. The closing
+    vertex is dropped: GeoJSON repeats the first point to close a ring, and
+    averaging it twice pulls the pin toward that corner (a fifth of the way,
+    on a four-corner lot).
+    """
+    try:
+        coords = rings[0]
+        if len(coords) > 1 and coords[0] == coords[-1]:
+            coords = coords[:-1]
+        xs = [c[0] for c in coords]
+        ys = [c[1] for c in coords]
+        return sum(xs) / len(xs), sum(ys) / len(ys)
+    except (IndexError, TypeError, ZeroDivisionError):
+        return None, None
+
+
 def _index_by_sbl(parcels: list[dict]) -> dict[str, dict]:
     """parcel SBL -> parcel. First writer wins on the (currently empty) set
     of duplicate SBLs, so the index is stable for a given input file."""
@@ -159,23 +179,10 @@ def _build_parcel_records(parcels_geo: dict) -> tuple[list[dict], dict[str, dict
         # if polygon, or the point itself).
         lat = lng = None
         if geom and geom.get("type") == "Polygon":
-            try:
-                coords = geom["coordinates"][0]
-                xs = [c[0] for c in coords]
-                ys = [c[1] for c in coords]
-                lng = sum(xs) / len(xs)
-                lat = sum(ys) / len(ys)
-            except (IndexError, ZeroDivisionError):
-                pass
+            lng, lat = _ring_centroid(geom.get("coordinates") or [])
         elif geom and geom.get("type") == "MultiPolygon":
-            try:
-                coords = geom["coordinates"][0][0]
-                xs = [c[0] for c in coords]
-                ys = [c[1] for c in coords]
-                lng = sum(xs) / len(xs)
-                lat = sum(ys) / len(ys)
-            except (IndexError, ZeroDivisionError):
-                pass
+            rings = (geom.get("coordinates") or [[]])[0] if geom.get("coordinates") else []
+            lng, lat = _ring_centroid(rings)
         elif geom and geom.get("type") == "Point":
             lng, lat = geom["coordinates"]
 

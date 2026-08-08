@@ -263,3 +263,11 @@ applied at the next full run.
   Truncating to `[:16]` and padding would match a real parcel for about half
   of them, but that collapses a sub-parcel onto its base parcel on a guess, so
   it isn't done.
+- **Every map pin sat off-centre because the centroid averaged the ring's
+  closing vertex twice.** GeoJSON repeats a polygon's first vertex to close
+  the ring, and `_build_parcel_records` took a plain mean over the raw vertex
+  list — so the duplicated corner got double weight, pulling the pin toward it
+  by roughly a fifth of the way on a four-corner lot. All 93,440 parcel
+  geometries have closed rings, so all of them were affected: median
+  correction 2.5m, p99 6.3m, max 34.8m. Small next to a city block, but
+  systematic and free to fix.
