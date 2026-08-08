@@ -404,6 +404,15 @@ table.portfolio thead th {
   letter-spacing: 0;
   text-transform: none;
 }
+/* Numeric headers have to sit over the edge their numbers align to. Left-aligned
+   headers over right-aligned cells left "Open" floating a column-width away from
+   the value it labelled — worst on one-row tables. Fixed widths also keep the
+   owner and operator tables reading as the same table. */
+table.portfolio thead th.num {
+  text-align: right;
+  padding-right: 4px;
+  width: 62px;
+}
 table.portfolio td {
   padding: 9px 8px 9px 0;
   border-bottom: 1px solid var(--rule);
@@ -496,13 +505,22 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
   color: var(--ink-2);
   margin: 0 0 2px;
 }
-.legend-ramp {
+/* The ramp and its ticks share one column template, so every bucket label sits
+   under the swatch it names. Four labels justified across a 120px row put
+   "5+" and "11+" nowhere near their steps. */
+.legend-scale {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
+  gap: 3px;
+}
+.legend-ramp,
+.legend-ticks {
+  display: grid;
+  grid-template-columns: repeat(4, 34px);
 }
 .legend-step {
   display: block;
-  width: 24px;
+  width: auto;
   height: 10px;
 }
 .legend-step.s0 { background: var(--s0); border-bottom: 1px solid var(--rule-2); }
@@ -511,26 +529,30 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 .legend-step.s3 { background: var(--s3); }
 .legend-step.s4 { background: var(--s4); }
 .legend-ticks {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  width: 120px;
   font-size: 10px;
   color: var(--ink-2);
 }
 .legend-ticks span {
-  text-align: left;
+  text-align: center;
 }
-.legend-ticks span:last-child {
-  text-align: right;
+
+/* Demolished is a state, not a fifth bucket — its swatch and definition sit
+   on their own row, off the sequential ramp. */
+.legend-demo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
 }
-/* The last tick can't carry its own definition without blowing out the
-   120px tick row, so the qualifier sits on its own line. */
+.legend-demo .legend-step.s4 {
+  width: 12px;
+  flex: 0 0 12px;
+  height: 8px;
+}
 .legend-note {
   font-family: var(--sans);
   font-size: 10px;
   color: var(--ink-2);
-  margin-top: 2px;
 }
 
 /* ----- Tabs / kind toggle ----------------------------------------------- */
@@ -955,21 +977,31 @@ body.panel-collapsed #panel-collapse {
   font-size: 13px;
   line-height: 1.55;
 }
+/* Two real columns. min-width on an inline-block key only holds while the key
+   is shorter than it — "Shared mailing address" overflowed 7em and shoved its
+   value right, so the list started values at three different x positions. */
 .audit-list > li {
+  display: grid;
+  grid-template-columns: 8.5em minmax(0, 1fr);
+  gap: 0 10px;
   padding: 3px 0;
   border-bottom: 1px dotted var(--rule);
 }
 .audit-list > li:last-child { border-bottom: 0; }
 .audit-key {
-  display: inline-block;
+  display: block;
   font-family: var(--mono);
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-2);
-  margin-right: 6px;
-  min-width: 7em;
+  line-height: 1.7;
 }
+/* A run of identical keys ("Member" × 16) is a list, not sixteen labelled
+   facts. Keep the first, hide the repeats — the column stays as the group's
+   heading without shouting it down the page. */
+.audit-list > li[data-key-repeat] .audit-key { visibility: hidden; }
+.audit-val { min-width: 0; }
 .audit-list .sub {
   display: inline;
   font-family: var(--mono);
@@ -1180,8 +1212,14 @@ body.panel-collapsed #panel-collapse {
     color: var(--ink-2);
     font-weight: 500;
   }
-  .legend-ramp { display: flex; flex-direction: row; }
-  .legend-step { width: 14px; height: 8px; }
+  /* Collapse the desktop two-row key back into one strip of five swatches:
+     .legend-scale stops being a box so the ramp sits inline with the
+     demolished swatch, and both tick and definition text drop away. */
+  .legend-scale { display: contents; }
+  .legend-ramp { display: grid; grid-template-columns: repeat(4, 14px); }
+  .legend-step { width: auto; height: 8px; }
+  .legend-demo { display: inline-flex; gap: 0; margin-top: 0; }
+  .legend-demo .legend-step.s4 { width: 14px; flex: 0 0 14px; height: 8px; }
   .legend-ticks { display: none; } /* drop ticks on mobile — the title carries the meaning */
   .legend-note { display: none; }  /* footnote to the ticks; goes where they go */
 
@@ -1355,8 +1393,10 @@ body.panel-collapsed #panel-collapse {
   /* Operator audit: swap "How these names are grouped" for a one-line summary */
   .audit-summary-desktop { display: none; }
   .audit-summary-mobile  { display: inline; }
-  .audit-list .audit-key { display: block; min-width: 0; margin-bottom: 2px; }
-  .audit-list > li { padding: 6px 0; }
+  .audit-list > li { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 6px 0; }
+  .audit-list .audit-key { line-height: 1.45; }
+  /* One column has no spare cell to leave blank — drop the repeat outright. */
+  .audit-list > li[data-key-repeat] .audit-key { display: none; }
 }
 
 /* Use dynamic-viewport units when available so iOS Safari address-bar

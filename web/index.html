@@ -41,19 +41,26 @@
     <div id="panel-content"></div>
   </aside>
 
+  <!-- Two keys, not one ramp: s0-s3 are buckets of a violation count, s4 is a
+       categorical state. Splitting them lets every bucket carry its own tick
+       instead of four labels fighting over one 120px row. -->
   <div id="legend" class="legend">
     <span class="legend-label-left">Open code violations</span>
-    <span class="legend-ramp" aria-hidden="true">
-      <span class="legend-step s0"></span>
-      <span class="legend-step s1"></span>
-      <span class="legend-step s2"></span>
-      <span class="legend-step s3"></span>
-      <span class="legend-step s4"></span>
+    <span class="legend-scale">
+      <span class="legend-ramp" aria-hidden="true">
+        <span class="legend-step s0"></span>
+        <span class="legend-step s1"></span>
+        <span class="legend-step s2"></span>
+        <span class="legend-step s3"></span>
+      </span>
+      <span class="legend-ticks">
+        <span>none</span><span>1+</span><span>5+</span><span>11+</span>
+      </span>
     </span>
-    <span class="legend-ticks">
-      <span>none</span><span>5+</span><span>11+</span><span>demolished</span>
+    <span class="legend-demo">
+      <span class="legend-step s4" aria-hidden="true"></span>
+      <span class="legend-note">demolished = permit + vacant lot</span>
     </span>
-    <span class="legend-note">demolished = permit + vacant lot</span>
   </div>
 
   <footer class="colophon">

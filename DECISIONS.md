@@ -2,6 +2,25 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — The legend shows two keys, not one five-step ramp
+
+`s0`-`s3` are buckets of a violation count; `s4` means "demolition permit and
+the assessment roll now reads vacant". Those are different kinds of value, and
+the old legend rendered them as one continuous scale with one tick row, which
+is what made the labels collide — `demolished` needs roughly as much width as
+the three numeric ticks combined.
+
+The ramp and its ticks now share a `repeat(4, 34px)` grid so each bucket label
+sits under its swatch, and the demolished swatch sits on its own row with the
+existing "permit + vacant lot" definition beside it rather than beneath.
+
+Rejected: shrinking the tick font until four labels fit. It keeps the
+false claim that demolished is the top of a severity scale, and 9px mono on a
+translucent plate is not readable.
+
+Rejected: labelling only the two endpoints. That drops `5+` and `11+`, which
+are the thresholds a reader actually needs to interpret the map.
+
 ## 2026-08-08 — Click targets carry data attributes, not inline handlers
 
 Every `onclick="fn('${escapeHtml(x)}')"` template is gone; the value lives in

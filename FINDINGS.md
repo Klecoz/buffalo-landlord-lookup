@@ -567,3 +567,42 @@ disabled — a sheet that no longer responds to the handle. The matching
 
 Only reproduced with synthetic `PointerEvent`s (`dispatchEvent` supplies no
 active pointer), so this is defensive rather than an observed field failure.
+
+## Desktop UI pass (Item 7)
+
+### The map legend was mixing a scale with a category
+
+`.legend-ticks` was a 120px flex row holding four labels — `none`, `5+`,
+`11+`, `demolished` — set to `justify-content: space-between`. Their combined
+text runs ~148px, so the row overflowed, `space-between` had no free space to
+distribute, and the labels butted together reading as one string:
+"none 5+ 11+ demolished". None of them sat under the swatch it named.
+
+Two separate problems underneath. The ramp has five swatches but only four
+labels, so the `1+` bucket (concern score 1-4) was never named. And `s4` is
+not a fifth step of a sequential scale — it is a categorical state, which is
+why its label was the one that would not fit. Splitting the categorical
+swatch onto its own row leaves four buckets over four 34px columns, each with
+room for its own tick.
+
+### Numeric table headers never got the alignment their cells had
+
+`table.portfolio thead th` set `text-align: left`; `td.num` set
+`text-align: right`. There was no `th.num` rule, so every header sat at the
+left edge of a column whose values were flushed right — measured at 1440px,
+the `Open` header started at x=1167 with its value right-aligned across an
+84px column. Most visible on single-row portfolios, where one header and one
+number sat 60px apart with nothing between them.
+
+### The audit list had three different value-column positions
+
+`.audit-key` used `min-width: 7em` on an inline-block. A min-width only holds
+while the content is shorter than it: `SHARED MAILING ADDRESS` renders about
+14em at 10.5px mono, so it pushed its own value right while `COHESION` and
+`MEMBER` values started at two further positions. Measured x=1029 / 986 / 979
+on one operator. Fixing it in CSS alone was not possible because the value
+had no element of its own — the rows now emit `<span class="audit-val">`.
+
+Separately, a 16-LLC operator printed the key `MEMBER` sixteen times down the
+left column. The repeats are still in the DOM (screen readers and the tests
+read them); CSS hides the duplicate ink via `[data-key-repeat]`.

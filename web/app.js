@@ -1181,42 +1181,61 @@ function renderAuditDisclosure(op) {
       : "";
   }
 
+  // Rows carry their key separately from their value so the stylesheet can lay
+  // them out as two real columns, and so a run of the same key (16 "Member"
+  // lines) can print the label once instead of sixteen times.
+  const rows = [];
+  const row = (key, valHtml, cls) => rows.push({ key, valHtml, cls });
+
+  row("Shared mailing address",
+    `${escapeHtml(a.shared_mailing_address || "—")} <span class="sub">(${escapeHtml(a.address_kind || "")})</span>`);
+
   const cohesion = a.cohesion || {};
-  const cohesionLine = cohesion.explanation
-    ? `<li><span class="audit-key">Cohesion</span> ${escapeHtml(cohesion.explanation)} <span class="sub">(score ${cohesion.score})</span></li>`
-    : "";
-  const patternLine = a.pattern === "alter_ego"
-    ? `<li><span class="audit-key">Pattern</span> alter-ego — one person + one LLC at the same street address. Classic LLC-unmasking signal.</li>`
-    : "";
+  if (cohesion.explanation) {
+    row("Cohesion", `${escapeHtml(cohesion.explanation)} <span class="sub">(score ${cohesion.score})</span>`);
+  }
+
   // Service-address classification (NYS DOS join). Rendered only when the
   // pipeline has classified the address; "unknown" is silent because we
   // don't want to imply false confidence either way.
   const sa = a.service_address || {};
-  const serviceAddrLine = sa.classification === "registered_agent"
-    ? `<li class="audit-warn"><span class="audit-key">Service address</span> ${(sa.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities are registered at this address — likely a registered-agent or filing-service address, not a real shared owner. <span class="sub">(NYS DOS, threshold ${sa.threshold})</span></li>`
-    : sa.classification === "shared_owner"
-    ? `<li><span class="audit-key">Service address</span> No registered-agent pool detected at this address. <span class="sub">(NYS DOS)</span></li>`
-    : "";
-  const dedupLines = (a.person_dedups || []).map(d => `
-    <li><span class="audit-key">Name dedup</span>
-      <strong>${escapeHtml(d.canonical)}</strong>
-      <span class="sub">also recorded as: ${(d.variants || []).map(escapeHtml).join(", ")}</span>
-    </li>`).join("");
-  const memberLines = (op.owners || []).map(o => `
-    <li><span class="audit-key">Member</span> ${escapeHtml(o.display)}
-      <span class="sub">(${o.properties} prop${o.properties === 1 ? "" : "s"})</span>
-    </li>`).join("");
-  const coOwnerLines = (a.co_owners || []).map(c => `
-    <li><span class="audit-key">Co-owner</span>
-      <strong>${escapeHtml(c.name)}</strong>
-      <span class="sub">(${c.parcels} parcel${c.parcels === 1 ? "" : "s"} in this cluster)</span>
-    </li>`).join("");
-  const linkedOpLines = (a.linked_operators || []).map(L => `
-    <li><span class="audit-key">Linked operator</span>
-      <a href="#/operator/${encodeURIComponent(L.operator_slug)}"
-         data-open-operator="${escapeHtml(L.operator_slug)}">${escapeHtml(L.operator_label)}</a>
-      <span class="sub">via ${escapeHtml(L.co_owner)} (${L.parcels} parcel${L.parcels === 1 ? "" : "s"} there)</span>
-    </li>`).join("");
+  if (sa.classification === "registered_agent") {
+    row("Service address",
+      `${(sa.nys_dos_entity_count || 0).toLocaleString()} unrelated NY entities are registered at this address — likely a registered-agent or filing-service address, not a real shared owner. <span class="sub">(NYS DOS, threshold ${sa.threshold})</span>`,
+      "audit-warn");
+  } else if (sa.classification === "shared_owner") {
+    row("Service address", `No registered-agent pool detected at this address. <span class="sub">(NYS DOS)</span>`);
+  }
+
+  if (a.pattern === "alter_ego") {
+    row("Pattern", "alter-ego — one person + one LLC at the same street address. Classic LLC-unmasking signal.");
+  }
+
+  (a.person_dedups || []).forEach(d => row("Name dedup",
+    `<strong>${escapeHtml(d.canonical)}</strong>
+     <span class="sub">also recorded as: ${(d.variants || []).map(escapeHtml).join(", ")}</span>`));
+
+  (op.owners || []).forEach(o => row("Member",
+    `${escapeHtml(o.display)}
+     <span class="sub">(${o.properties} prop${o.properties === 1 ? "" : "s"})</span>`));
+
+  (a.co_owners || []).forEach(c => row("Co-owner",
+    `<strong>${escapeHtml(c.name)}</strong>
+     <span class="sub">(${c.parcels} parcel${c.parcels === 1 ? "" : "s"} in this cluster)</span>`));
+
+  (a.linked_operators || []).forEach(L => row("Linked operator",
+    `<a href="#/operator/${encodeURIComponent(L.operator_slug)}"
+        data-open-operator="${escapeHtml(L.operator_slug)}">${escapeHtml(L.operator_label)}</a>
+     <span class="sub">via ${escapeHtml(L.co_owner)} (${L.parcels} parcel${L.parcels === 1 ? "" : "s"} there)</span>`));
+
+  // The key text stays in the DOM on repeats (screen readers and the tests
+  // still read it); CSS hides only the duplicate ink.
+  const auditRows = rows.map((r, i) => {
+    const repeat = i > 0 && rows[i - 1].key === r.key;
+    return `<li${r.cls ? ` class="${r.cls}"` : ""}${repeat ? ` data-key-repeat=""` : ""}>` +
+      `<span class="audit-key">${r.key}</span>` +
+      `<span class="audit-val">${r.valHtml}</span></li>`;
+  }).join("");
 
   const mobileSummary = [
     `${a.member_count || (op.owners || []).length} LLC${(a.member_count || 0) === 1 ? "" : "s"}`,
@@ -1230,17 +1249,7 @@ function renderAuditDisclosure(op) {
         <span class="audit-summary-desktop">How these names are grouped</span>
         <span class="audit-summary-mobile">${escapeHtml(mobileSummary)}</span>
       </summary>
-      <ul class="audit-list">
-        <li><span class="audit-key">Shared mailing address</span> ${escapeHtml(a.shared_mailing_address || "—")}
-          <span class="sub">(${escapeHtml(a.address_kind || "")})</span></li>
-        ${cohesionLine}
-        ${serviceAddrLine}
-        ${patternLine}
-        ${dedupLines}
-        ${memberLines}
-        ${coOwnerLines}
-        ${linkedOpLines}
-      </ul>
+      <ul class="audit-list">${auditRows}</ul>
       <p class="audit-foot sub">${a.member_count} LLC${a.member_count === 1 ? "" : "s"} merged into one operator. Bulk LLC ownership data is not publicly available in NYS, so this is the best inference the public data allows.</p>
     </details>`;
 }
