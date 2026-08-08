@@ -495,3 +495,16 @@ reveals the reopen pill. Tapping it called `renderLeaderboards`, and
 `showPanel` leaves an existing snap class alone — so the sheet stayed at
 120px and the pill stayed put. The handler now lifts the sheet to half on
 phones.
+
+### 311 copy implied data that doesn't exist
+
+The dossier's empty state read "No housing-related 311 complaints in the last
+18 months". Two things were wrong: the pipeline's window is 12 months, not
+18, and the dossier's complaint list isn't windowed at all — `_join_311`
+appends every matched complaint and only the `complaints_311_12mo` *counter*
+is gated by the cutoff. The empty state now says "on record".
+
+The counter tiles said "311 housing 12mo" and "311 (12mo)", which reads as
+the last 12 months from today. The window ends at the feed's max date
+(2024-05-10, frozen upstream), so the tiles now carry that anchor, derived
+from `meta.complaints_311_max_date` rather than hardcoded.

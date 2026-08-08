@@ -553,3 +553,32 @@ describe('renderLeaderboards listener hygiene', () => {
     spy.mockRestore()
   })
 })
+
+// ---------------------------------------------------------------------------
+// 311 copy — the feed froze in 2024-05, so "12 months" ends at the feed's max
+// date, and the dossier's complaint list is all-time rather than a window.
+// ---------------------------------------------------------------------------
+
+describe('311 labelling is anchored to the frozen feed', () => {
+  const props = { id: 'p1', addr: '1 Main St', owner: 'ACME LLC', owner_slug: 'acme-llc',
+    violations_open: 0, violations_total: 0, complaints_311_12mo: 0, portfolio_n: 1 }
+
+  it('labels the dossier tile with the feed max date', () => {
+    t.state.meta = { complaints_311_max_date: '2024-05-10T18:23:00.000' }
+    t.renderDossier(props, { violations: [], complaints: [] })
+    expect(document.getElementById('panel-content').textContent).toContain('12 mo to 2024-05')
+  })
+
+  it('falls back to an unanchored label when meta has no 311 date', () => {
+    t.state.meta = {}
+    t.renderDossier(props, { violations: [], complaints: [] })
+    expect(document.getElementById('panel-content').textContent).toContain('311 housing · 12 mo')
+  })
+
+  it('does not claim an 18-month window in the empty 311 state', () => {
+    t.renderDossier(props, { violations: [], complaints: [] })
+    const text = document.getElementById('panel-content').textContent
+    expect(text).toContain('No housing-related 311 complaints on record.')
+    expect(text).not.toContain('18 months')
+  })
+})

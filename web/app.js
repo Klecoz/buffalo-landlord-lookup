@@ -97,6 +97,14 @@ function freshnessPill(kind) {
   return `<span class="freshness-pill ${cls}">${label}: through ${dateLabel}</span>`;
 }
 
+// The 311 feed stopped updating in 2024-05, so every "12 month" count ends at
+// the feed's max date rather than today. Label the tiles with that anchor so
+// the number isn't read as current.
+function complaints311Label() {
+  const max = (state.meta?.complaints_311_max_date || "").slice(0, 7);
+  return max ? `311 housing · 12 mo to ${max}` : "311 housing · 12 mo";
+}
+
 function _copyLinkBtnHtml() {
   return `<button class="copy-link-btn" onclick="window.copyCurrentUrl(this)" title="Copy a shareable link to this view">Copy link</button>`;
 }
@@ -605,7 +613,7 @@ function renderDossier(props, dossier) {
       </div>
       <div class="stat ${props.complaints_311_12mo > 2 ? "warn" : ""}">
         <div class="num">${props.complaints_311_12mo}</div>
-        <div class="label">311 housing 12mo</div>
+        <div class="label">${complaints311Label()}</div>
       </div>
     </div>
 
@@ -629,7 +637,7 @@ function renderDossier(props, dossier) {
     <div class="section-meta">${freshnessPill("311")}</div>
     ${complaintFilters}
     ${complaints.length === 0
-      ? `<p class="empty">No housing-related 311 complaints in the last 18 months.</p>`
+      ? `<p class="empty">No housing-related 311 complaints on record.</p>`
       : `<ul class="complaints" data-list="complaints">${complaints.map(c => `
           <li data-iso="${escapeHtml((c.date || "").slice(0, 10))}">
             <div class="date">${fmtDate(c.date)}</div>
@@ -1309,7 +1317,7 @@ function renderOperator(op) {
         <div class="num">${op.total_open_violations}</div><div class="label">Open violations</div>
       </div>
       <div class="stat"><div class="num">${op.total_all_violations}</div><div class="label">All-time violations</div></div>
-      <div class="stat"><div class="num">${op.total_complaints_311_12mo}</div><div class="label">311 (12mo)</div></div>
+      <div class="stat"><div class="num">${op.total_complaints_311_12mo}</div><div class="label">${complaints311Label()}</div></div>
       <div class="stat"><div class="num">${fmtMoney(op.total_value)}</div><div class="label">Portfolio value</div></div>
     </div>
 
