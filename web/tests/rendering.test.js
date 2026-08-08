@@ -289,9 +289,41 @@ describe('renderDossier', () => {
     expect(document.querySelector('#panel-content .cta')).toBeNull()
   })
 
-  it('shows demolished status', () => {
-    t.renderDossier({ ...baseProps, demolished: true }, null)
-    expect(document.getElementById('panel-content').textContent).toContain('Yes')
+  it('reads a confirmed demolition as a permit date plus a vacant lot', () => {
+    t.renderDossier(
+      { ...baseProps, demolished: true, demo_permit: { date: '2019-05-02', via: 'sbl' } },
+      null,
+    )
+    const note = document.querySelector('#panel-content .demo-note')
+    expect(note.className).toContain('demolished')
+    expect(note.textContent.replace(/\s+/g, ' ')).toContain(
+      'Demolition permit issued 2019 — lot now assessed as vacant',
+    )
+  })
+
+  it('reads a permit over a standing building as a neutral note', () => {
+    t.renderDossier(
+      { ...baseProps, demolished: false, demo_permit: { date: '2025-11-20', via: 'sbl' } },
+      null,
+    )
+    const note = document.querySelector('#panel-content .demo-note')
+    expect(note.className).not.toContain('demolished')
+    expect(note.textContent.replace(/\s+/g, ' ')).toContain(
+      'Demolition permit issued 2025 — the assessment roll still shows a building',
+    )
+  })
+
+  it('parses demo_permit when MapLibre hands it back as a JSON string', () => {
+    t.renderDossier(
+      { ...baseProps, demolished: true, demo_permit: '{"date":"2019-05-02","via":"sbl"}' },
+      null,
+    )
+    expect(document.querySelector('#panel-content .demo-note').textContent).toContain('2019')
+  })
+
+  it('omits the demolition line entirely when no permit exists', () => {
+    t.renderDossier(baseProps, null)
+    expect(document.querySelector('#panel-content .demo-note')).toBeNull()
   })
 
   it('escapes HTML in address and owner fields', () => {

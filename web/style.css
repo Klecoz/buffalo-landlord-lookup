@@ -347,6 +347,21 @@ button { font-family: inherit; }
 }
 
 /* ----- CTA buttons ------------------------------------------------------- */
+/* Demolition-permit line under the dossier stats. Neutral by default: a
+   permit over a standing building is a fact, not an accusation. */
+.demo-note {
+  margin: 10px 0 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.demo-note.demolished {
+  color: var(--ink);
+  border-left: 2px solid var(--s4);
+  padding-left: 10px;
+}
+
 button.cta {
   display: block;
   width: 100%;
@@ -508,6 +523,14 @@ table.portfolio td.num.bad  { color: var(--signal); font-weight: 500; }
 }
 .legend-ticks span:last-child {
   text-align: right;
+}
+/* The last tick can't carry its own definition without blowing out the
+   120px tick row, so the qualifier sits on its own line. */
+.legend-note {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--ink-2);
+  margin-top: 2px;
 }
 
 /* ----- Tabs / kind toggle ----------------------------------------------- */
@@ -1160,6 +1183,7 @@ body.panel-collapsed #panel-collapse {
   .legend-ramp { display: flex; flex-direction: row; }
   .legend-step { width: 14px; height: 8px; }
   .legend-ticks { display: none; } /* drop ticks on mobile — the title carries the meaning */
+  .legend-note { display: none; }  /* footnote to the ticks; goes where they go */
 
   /* Hide legend when sheet is at half or full */
   body:has(#panel.sheet-half) .legend,

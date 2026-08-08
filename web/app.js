@@ -477,6 +477,21 @@ async function selectParcel(parcelId) {
   location.hash = `#/parcel/${encodeURIComponent(parcelId)}`;
 }
 
+// The pipeline attaches demo_permit as {date, via}. MapLibre only carries
+// primitives in feature properties, so a parcel queried off the map hands it
+// back as a JSON string while owner JSON hands back the real object. Accept
+// both.
+function demoPermit(props) {
+  const raw = props?.demo_permit;
+  if (!raw) return null;
+  if (typeof raw !== "string") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 function renderDossier(props, dossier) {
   const byDateDesc = (a, b) => (b.date || "").localeCompare(a.date || "");
   const violations = (dossier?.violations || []).slice().sort(byDateDesc);
@@ -513,6 +528,19 @@ function renderDossier(props, dossier) {
       ${dateChips("complaints")}
     </div>` : "";
 
+  // A permit says a demolition was applied for; the assessment roll says
+  // whether a building is still there. Parcels with neither get no line at
+  // all — "Demolished: No" was prime space spent saying nothing.
+  const permitYear = (demoPermit(props)?.date || "").slice(0, 4);
+  const demoNote = permitYear
+    ? `<p class="demo-note${props.demolished ? " demolished" : ""}">
+        Demolition permit issued ${escapeHtml(permitYear)} —
+        ${props.demolished
+          ? "lot now assessed as vacant"
+          : "the assessment roll still shows a building"}
+      </p>`
+    : "";
+
   showPanel(`
     <h2>Property Dossier</h2>
     <div class="addr">${escapeHtml(props.addr)}</div>
@@ -531,11 +559,9 @@ function renderDossier(props, dossier) {
         <div class="num">${props.complaints_311_12mo}</div>
         <div class="label">311 housing 12mo</div>
       </div>
-      <div class="stat ${props.demolished ? "bad" : ""}">
-        <div class="num">${props.demolished ? "Yes" : "No"}</div>
-        <div class="label">Demolished</div>
-      </div>
     </div>
+
+    ${demoNote}
 
     ${portfolioCta}
 

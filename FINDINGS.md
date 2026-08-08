@@ -76,6 +76,11 @@ May-dataset figures in the planning audit above.
 - **The permit feed is fresher than the May pull suggested.** Max issued date is
   2026-07-13 (the May pull had only 2 permits dated 2026); 77 permits are dated
   2025 or later.
+- **MapLibre only carries primitives in feature properties.** A parcel opened
+  from the map comes out of `queryRenderedFeatures`, and any object-valued
+  property is handed back JSON-stringified — so `demo_permit` arrives as an
+  object from owner JSON and as a string from the map. `app.js::demoPermit`
+  accepts both rather than the emitter shipping two shapes.
 - **361 parcels have no assessment at all** (`LAND_AV` and `TOTAL_AV` both 0),
   exactly the set whose `PROP_CLASS` is also empty. They are excluded from the
   value-based vacancy test on purpose — a blank roll record is silence, not
