@@ -6,6 +6,7 @@ The Socrata fetch is not exercised here; integration is verified end-to-end
 via the pipeline run.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -186,3 +187,88 @@ def test_paginate_dataset_requests_a_stable_order(monkeypatch):
     monkeypatch.setattr(nys_dos.requests, "get", fake_get)
     list(nys_dos._paginate_dataset(None))
     assert orders == [":id"]
+
+
+# --- cache freshness -----------------------------------------------------
+
+
+def test_index_is_fresh_false_when_file_absent(tmp_path):
+    import nys_dos
+    assert nys_dos._index_is_fresh(tmp_path / "nope.json", 30) is False
+
+
+def test_index_is_fresh_true_for_a_just_written_file(tmp_path):
+    import nys_dos
+    p = tmp_path / "idx.json"
+    p.write_text("{}")
+    assert nys_dos._index_is_fresh(p, 30) is True
+
+
+def test_index_is_fresh_false_past_the_window(tmp_path):
+    import os
+    import time as _time
+    import nys_dos
+    p = tmp_path / "idx.json"
+    p.write_text("{}")
+    old = _time.time() - 31 * 86400
+    os.utime(p, (old, old))
+    assert nys_dos._index_is_fresh(p, 30) is False
+
+
+def _stub_network(monkeypatch, nys_dos, rows):
+    monkeypatch.setattr(nys_dos, "_fetch_dataset_max_date", lambda token: "2026-07-01")
+    monkeypatch.setattr(nys_dos, "_paginate_dataset", lambda token: iter(rows))
+
+
+def test_corrupt_cache_is_refetched_not_fatal(tmp_path, monkeypatch):
+    """A truncated cache file — an interrupted write, a full disk — used to
+    abort the whole pipeline run with a JSONDecodeError. The cache is
+    derived data; the right move is to rebuild it."""
+    import nys_dos
+    idx = tmp_path / "nys_dos_address_index.json"
+    idx.write_text('{"index": {"1 MAIN ST | BUF')  # truncated mid-write
+    monkeypatch.setattr(nys_dos, "INDEX_PATH", idx)
+    _stub_network(monkeypatch, nys_dos, [{
+        "dos_id": "1", "dos_process_address_1": "1 Main St",
+        "dos_process_city": "Buffalo", "dos_process_state": "NY",
+        "dos_process_zip": "14202",
+    }])
+
+    index, max_date = nys_dos.fetch_and_build_index()
+
+    assert max_date == "2026-07-01"
+    assert sum(index.values()) == 1
+    # And the rebuilt cache is readable.
+    assert json.loads(idx.read_text())["index"] == index
+
+
+def test_cache_missing_index_key_is_refetched(tmp_path, monkeypatch):
+    """An older/partial payload shape must not KeyError the run."""
+    import nys_dos
+    idx = tmp_path / "nys_dos_address_index.json"
+    idx.write_text('{"source": "nys_dos_active_corporations"}')
+    monkeypatch.setattr(nys_dos, "INDEX_PATH", idx)
+    _stub_network(monkeypatch, nys_dos, [])
+
+    index, _ = nys_dos.fetch_and_build_index()
+    assert index == {}
+
+
+def test_fresh_cache_is_used_without_touching_the_network(tmp_path, monkeypatch):
+    import nys_dos
+    idx = tmp_path / "nys_dos_address_index.json"
+    idx.write_text(json.dumps({
+        "index": {"1 MAIN ST | BUFFALO | NY | 14202": 7},
+        "source_max_date": "2026-06-01",
+        "address_count": 1,
+    }))
+    monkeypatch.setattr(nys_dos, "INDEX_PATH", idx)
+
+    def explode(*a, **k):
+        raise AssertionError("network hit despite a fresh cache")
+
+    monkeypatch.setattr(nys_dos, "_paginate_dataset", explode)
+
+    index, max_date = nys_dos.fetch_and_build_index()
+    assert index == {"1 MAIN ST | BUFFALO | NY | 14202": 7}
+    assert max_date == "2026-06-01"

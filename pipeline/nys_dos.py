@@ -158,15 +158,27 @@ def fetch_and_build_index(
     monthly, so daily pipeline runs don't need to re-fetch.
     """
     if not force_refresh and _index_is_fresh(INDEX_PATH, refresh_days):
-        with INDEX_PATH.open() as f:
-            payload = json.load(f)
-        print(
-            f"Using cached NYS DOS address index "
-            f"({payload.get('address_count', 0):,} addresses, "
-            f"max_date={payload.get('source_max_date')})",
-            file=sys.stderr,
-        )
-        return payload["index"], payload.get("source_max_date")
+        # The cache is derived data. If it's unreadable — a write interrupted
+        # by a full disk or a Ctrl-C, an older payload shape — rebuilding it
+        # is cheap and correct; aborting the pipeline run is neither.
+        try:
+            with INDEX_PATH.open() as f:
+                payload = json.load(f)
+            index = payload["index"]
+        except (OSError, ValueError, KeyError) as e:
+            print(
+                f"  warning: cached NYS DOS index at {INDEX_PATH} is unusable "
+                f"({e}); re-fetching",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"Using cached NYS DOS address index "
+                f"({payload.get('address_count', 0):,} addresses, "
+                f"max_date={payload.get('source_max_date')})",
+                file=sys.stderr,
+            )
+            return index, payload.get("source_max_date")
 
     print(f"Fetching NYS DOS active corporations ({DATASET_ID})...", file=sys.stderr)
     app_token = os.environ.get("NYS_OPEN_DATA_APP_TOKEN") or None

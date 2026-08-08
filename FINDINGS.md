@@ -275,3 +275,11 @@ applied at the next full run.
   raised from inside `join_all`, naming one file and offering no way forward.
   It now preflights all four raw inputs, lists every missing one, and points
   at the command that produces them.
+- **An unreadable NYS DOS cache aborted the whole pipeline run.**
+  `fetch_and_build_index` treated a fresh-by-mtime file as readable and let
+  `json.load`'s `JSONDecodeError` (or a `KeyError` on `payload["index"]` for
+  an older payload shape) escape. A truncated cache is exactly what an
+  interrupted write leaves behind, and the file is derived data, so it now
+  warns and re-fetches. Clock skew is not treated as an error: a cache with a
+  future mtime reads as fresh, which is the harmless direction — the next
+  scheduled refresh corrects it, and `--force-dos-refresh` overrides.
