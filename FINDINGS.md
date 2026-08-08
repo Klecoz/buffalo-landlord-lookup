@@ -219,3 +219,18 @@ applied at the next full run.
   Frontier Transportatio", "Geleynse Whelchel Family Livin", "Highland
   Properties of Bflo.In". These split at the owner level and are re-joined
   only by the operator layer.
+
+## 2026-08-07 — Pipeline bug hunt (Item 4)
+
+- **Socrata paging without `$order` silently dropped 8,956 code violations
+  (3.6%) from today's pull.** `fetch.py::_socrata` requested `$limit`/`$offset`
+  windows with no `$order`. SODA gives an unordered query no stable row order,
+  so consecutive windows get sliced out of differently-sorted result sets: the
+  total row count comes out exactly right (250,586, matching
+  `select count(1)` on the server) while 8,956 distinct `uniquekey`s are absent
+  and 8,956 other rows appear twice. The exact-duplicate row count and the
+  missing-key count matching at 8,956 is the fingerprint. Verified by pulling
+  all 250,586 `uniquekey`s from the server *with* `$order=:id` and diffing
+  against the local file. The 311 (4 pages) and demolition (1 page) pulls
+  happened to come through intact — it is luck, not a property of those
+  datasets. Fixed by sending `$order=:id` on every page.

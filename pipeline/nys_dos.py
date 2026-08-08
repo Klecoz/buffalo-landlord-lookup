@@ -118,7 +118,15 @@ def _paginate_dataset(app_token: Optional[str]) -> Iterable[dict]:
     offset = 0
     total = 0
     while True:
-        params = {"$limit": PAGE_SIZE, "$offset": offset, "$select": fields}
+        # `$order` is required for correct paging — see the note in
+        # fetch.py::_socrata. Unordered, this pull drops entities and
+        # undercounts the registered-agent pools the index exists to find.
+        params = {
+            "$limit": PAGE_SIZE,
+            "$offset": offset,
+            "$select": fields,
+            "$order": ":id",
+        }
         r = requests.get(url, params=params, headers=headers, timeout=300)
         r.raise_for_status()
         page = r.json()

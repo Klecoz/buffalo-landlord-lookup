@@ -155,3 +155,34 @@ def test_classify_middle_range_is_unknown():
     assert classify_service_address(SHARED_OWNER_THRESHOLD, "street") == "unknown"
     assert classify_service_address(50, "street") == "unknown"
     assert classify_service_address(REGISTERED_AGENT_THRESHOLD - 1, "street") == "unknown"
+
+
+# --- _paginate_dataset ---------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        pass
+
+
+def test_paginate_dataset_requests_a_stable_order(monkeypatch):
+    """Same SODA paging hazard as fetch.py: without an `$order`, the 4.2M-row
+    active-corporations pull silently skips entities, undercounting the
+    registered-agent pools this index exists to detect."""
+    import nys_dos
+
+    orders = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        orders.append(params.get("$order"))
+        return _FakeResponse([])
+
+    monkeypatch.setattr(nys_dos.requests, "get", fake_get)
+    list(nys_dos._paginate_dataset(None))
+    assert orders == [":id"]

@@ -219,3 +219,64 @@ def test_fetch_311_housing_writes_file_and_uses_dpis_filter(tmp_path, monkeypatc
     # The dataset is filtered at the API to housing-related subjects only.
     assert any("DPIS" in (w or "") for w in captured_where)
     assert any("Buffalo Municipal Housing Authority" in (w or "") for w in captured_where)
+
+
+# --- _socrata paging stability (unordered queries drop rows) --------------
+
+
+class _UnstableSocrataServer:
+    """Models a real Socrata dataset paged without `$order`.
+
+    SODA does not guarantee a stable row order across requests unless the
+    query names one, so consecutive `$offset` windows can be sliced out of
+    differently-ordered result sets. This fake reproduces that by rotating
+    its backing rows on every request that arrives without `$order`, which
+    makes some rows appear twice and others never appear at all.
+    """
+
+    def __init__(self, rows, page_size):
+        self.rows = rows
+        self.page_size = page_size
+        self.requests = 0
+
+    def get(self, url, params=None, timeout=None):
+        self.requests += 1
+        rows = self.rows
+        if not params.get("$order"):
+            # A different arbitrary order on each request — the windows no
+            # longer tile the dataset.
+            shift = (self.page_size // 2) * self.requests
+            rows = rows[shift:] + rows[:shift]
+        offset = params["$offset"]
+        return _FakeResponse(rows[offset:offset + params["$limit"]])
+
+
+def test_socrata_requests_a_stable_order(monkeypatch):
+    """Every page request must name an `$order`, or SODA is free to return
+    the windows out of a re-sorted result set."""
+    orders = []
+
+    def fake_get(url, params=None, timeout=None):
+        orders.append(params.get("$order"))
+        return _FakeResponse([])
+
+    monkeypatch.setattr(fetch_mod.requests, "get", fake_get)
+    fetch_mod._socrata("dataset-id")
+    assert orders == [":id"]
+
+
+def test_socrata_multi_page_fetch_loses_no_rows(monkeypatch):
+    """The regression that cost us 8,956 code violations on 2026-08-07:
+    a multi-page pull off an unordered query silently substituted duplicate
+    rows for missing ones while keeping the total row count correct."""
+    monkeypatch.setattr(fetch_mod, "PAGE_SIZE", 100)
+    expected = [{"uniquekey": str(i)} for i in range(250)]
+    server = _UnstableSocrataServer(expected, fetch_mod.PAGE_SIZE)
+    monkeypatch.setattr(fetch_mod.requests, "get", server.get)
+
+    rows = fetch_mod._socrata("dataset-id")
+
+    from collections import Counter
+    assert Counter(r["uniquekey"] for r in rows) == Counter(
+        r["uniquekey"] for r in expected
+    )

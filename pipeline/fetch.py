@@ -55,7 +55,16 @@ def _socrata(dataset_id: str, where: str | None = None) -> list[dict]:
     out: list[dict] = []
     offset = 0
     while True:
-        params: dict[str, Any] = {"$limit": PAGE_SIZE, "$offset": offset}
+        # `$order` is not optional. SODA gives no stable row order to an
+        # unordered query, so consecutive `$offset` windows can be sliced out
+        # of differently-sorted result sets — the row count comes out right
+        # while some rows are duplicated and others are silently missing.
+        # `:id` is the internal row identifier, present on every dataset.
+        params: dict[str, Any] = {
+            "$limit": PAGE_SIZE,
+            "$offset": offset,
+            "$order": ":id",
+        }
         if where:
             params["$where"] = where
         r = requests.get(url, params=params, timeout=180)
