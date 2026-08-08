@@ -308,3 +308,41 @@ describe('missing records (404)', () => {
       .toContain("Couldn't load that owner's portfolio")
   })
 })
+
+// ---------------------------------------------------------------------------
+// Back/forward — leaving state.selectedId set while an owner or operator view
+// is open made a later "back" to that same #/parcel/ route a no-op, so the URL
+// said parcel while the panel still showed the portfolio.
+// ---------------------------------------------------------------------------
+
+describe('parcel selection is released by the owner and operator views', () => {
+  it('clears state.selectedId when an owner portfolio opens', async () => {
+    t.state.selectedId = 'parcel-123'
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: vi.fn().mockResolvedValue({ owner_display: 'X', properties: [] }),
+    })
+    await window.openPortfolio('x')
+    expect(t.state.selectedId).toBeNull()
+  })
+
+  it('clears state.selectedId when an operator opens', async () => {
+    t.state.selectedId = 'parcel-123'
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: vi.fn().mockResolvedValue({
+        operator_label: 'X', operator_slug: 'x', mailing_address: 'A',
+        owners: [], properties: [], total_properties: 0,
+      }),
+    })
+    await window.openOperator('x')
+    expect(t.state.selectedId).toBeNull()
+  })
+
+  it('re-selects a parcel after the panel has moved on to an owner', async () => {
+    t.state.selectedId = null
+    location.hash = '#/parcel/parcel-123'
+    t.applyHashRoute()
+    expect(t.state.selectedId).toBe('parcel-123')
+  })
+})

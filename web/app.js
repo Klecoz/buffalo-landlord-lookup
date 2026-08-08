@@ -726,6 +726,10 @@ window.openPortfolio = async function (slug, opts = {}) {
     portfolio._slug = slug;  // attach slug for the highlight toggle
     state.lastPortfolio = portfolio;
     state.lastOperator = null;
+    // Leaving the previous parcel selected makes applyHashRoute treat a later
+    // "back" to that same #/parcel/ route as a no-op, stranding the URL on the
+    // parcel while the panel still shows this portfolio.
+    state.selectedId = null;
     if (opts.highlight) {
       applyMapFilter("owner", slug, portfolio.owner_display || slug);
     }
@@ -1197,6 +1201,7 @@ window.openOperator = async function (slug, opts = {}) {
     const op = await r.json();
     state.lastOperator = op;
     state.lastPortfolio = null;
+    state.selectedId = null;   // see the note in openPortfolio
     if (opts.highlight) {
       // applyMapFilter for operator kind reads state.lastOperator, so it must
       // be set above first.

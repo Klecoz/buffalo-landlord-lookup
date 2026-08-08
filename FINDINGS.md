@@ -460,3 +460,10 @@ links from before a refresh 404 — a known consequence of the pipeline, not a
 transient failure. Both loaders reported "Couldn't load that owner's
 portfolio", which invites a pointless retry. A 404 is now separated from a
 transport failure and says the record isn't in the current dataset.
+
+### Back to a parcel route left the panel on the owner view
+
+`state.selectedId` stayed set while an owner or operator view was open, and
+`applyHashRoute` skips `selectParcel` when the routed id already matches it.
+Going parcel → owner → Back therefore restored the `#/parcel/` URL while the
+panel still showed the portfolio. Both loaders now release the selection.
