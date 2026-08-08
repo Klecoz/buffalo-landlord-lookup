@@ -2,6 +2,38 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — The filter chip is two boxes, and only the label may truncate
+
+Making the chip a flex row with `.filter-chip-label` as the only shrinking
+child fixes the disappearing "✕ Clear" without capping the label length. The
+alternative was to truncate the owner name in JS at some character count,
+which puts a layout constant in the render path and still guesses wrong at
+360px versus 430px.
+
+The chip keeps its whole-surface click handler; the ✕ is an affordance, not
+the only target.
+
+## 2026-08-08 — The peek sheet is its own "open" affordance
+
+`#reopen-panel` is now shown on phones only when the panel is fully closed,
+positioned at `bottom: 72px` to clear the 60px closed strip. At peek the sheet
+already presents its title and a full-width drag handle that opens on tap, so
+a second control saying "Open" was duplicating a thing already on screen —
+and it was rendering behind the sheet in both states anyway.
+
+Rejected: moving the pill above the sheet at peek. The bottom-left strip
+already carries the colophon, the legend and, with a filter on, the chip;
+adding a fourth fixed element there to duplicate the handle spends map for
+nothing.
+
+Not fixed, deliberately: `.panel-handle` is 28px tall. That clears WCAG 2.5.8
+(24px) and it spans the full 390px width, so it is an easy target despite the
+height. Growing it to 44px would push `#panel-close` and the panel's top
+padding down with it and cost 16px of the 120px peek content — the state where
+content is scarcest.
+
+Choices made and why, with rejected alternatives. Newest first.
+
 ## 2026-08-08 — The accent is scoped to boards that measure harm
 
 `concern: true` is a property of the board, not of the row. The alternative

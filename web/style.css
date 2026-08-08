@@ -746,6 +746,12 @@ body.panel-collapsed #panel-collapse {
   top: 78px;
   left: calc(24px + 360px + 12px);
   z-index: 25;
+  /* Two boxes, not one text run: the owner name can be arbitrarily long, and
+     when the whole chip ellipsised as one string the dismiss control was the
+     part that disappeared. */
+  display: flex;
+  align-items: center;
+  gap: 10px;
   background: var(--paper);
   color: var(--ink);
   border: 1px solid var(--ink);
@@ -756,7 +762,6 @@ body.panel-collapsed #panel-collapse {
   max-width: calc(100vw - 540px - 396px - 12px);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   transition: background 100ms;
 }
 #filter-chip:hover { background: var(--paper-2); }
@@ -769,6 +774,13 @@ body.panel-collapsed #panel-collapse {
   font-weight: 400;
 }
 #filter-chip:hover .clear { color: var(--signal); }
+.filter-chip-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#filter-chip .clear { flex: 0 0 auto; }
 
 /* ----- Filter pills (leaderboard board tabs styled as chips) ------------ */
 /* .filter-pill is used when JS renders them as pills; .tabs button gets
@@ -1135,7 +1147,12 @@ body.panel-collapsed #panel-collapse {
     font-size: 10.5px;
     color: var(--ink-2);
     margin-top: 2px;
+    white-space: nowrap;
   }
+  /* At 360px the full line wrapped and the search bar clipped its second row.
+     The title one line up already says Buffalo, so the place is the segment
+     that goes. */
+  .masthead-place { display: none; }
 
   #search-row {
     top: 62px; left: 0; right: 0;
@@ -1227,18 +1244,27 @@ body.panel-collapsed #panel-collapse {
   body:has(#panel.sheet-half) .legend,
   body:has(#panel.sheet-full) .legend { display: none; }
 
-  /* Reopen-panel: show at peek state too; styled as small pill bottom-left */
+  /* An active filter chip claims the strip above the sheet, so the two
+     reference strips step up past it rather than sitting underneath. */
+  body:has(#filter-chip:not(.hidden)) .colophon { bottom: 188px; }
+  body:has(#filter-chip:not(.hidden)) .legend   { bottom: 224px; }
+
+  /* Reopen-panel: pill above the closed strip, bottom-left */
   #reopen-panel {
     display: none; /* default hidden on phone */
-    bottom: 8px; left: 12px; right: auto; top: auto;
-    border-radius: 16px;
-    padding: 6px 14px;
+    bottom: 72px; left: 12px; right: auto; top: auto;
+    border-radius: 22px;
+    padding: 12px 16px;
+    min-height: 44px;
+    line-height: 20px;
     font-size: 12px;
   }
 
-  /* Show when panel is hidden OR at peek — override .hidden class */
-  body:has(#panel.hidden) #reopen-panel,
-  body:has(#panel.sheet-peek) #reopen-panel {
+  /* Only when the panel is fully closed. At peek the sheet already shows its
+     title and a full-width drag handle that opens on tap — and at bottom:8px
+     this pill sat behind the sheet (z-index 25 under the panel's 30), so it
+     was a control nobody could see in either state. */
+  body:has(#panel.hidden) #reopen-panel {
     display: block !important;
   }
 

@@ -671,3 +671,39 @@ siblings in one flex container, it wrapped mid-group. "Last 90d" and "Last
 30d" landed on a second line directly under the Status label, reading as two
 more status options. Wrapping each label with its own chips fixes the break
 point without changing what wraps.
+
+### The filter chip ellipsised away its own dismiss control
+
+`#filter-chip` was one text run under `white-space: nowrap; overflow: hidden;
+text-overflow: ellipsis`, and "✕ Clear" was the last thing in it. Owner labels
+run long — "INCT Holdings LLC (+11 more LLCs) · 312 parcels" is 336px of
+content in a 336px chip at 360px wide — so the ellipsis always landed before
+the Clear, which measured at `left: 403` on a 360px screen. The chip still
+cleared the filter when tapped anywhere, so the filter was escapable; what was
+missing was any sign that it could be.
+
+### Three pieces of map furniture were stacked in the same 44px
+
+At phone peek the sheet occupies 0–120px, the colophon is pinned at
+`bottom: 132px` and the legend at `bottom: 168px`. The filter chip is also
+`bottom: calc(120px + 12px)` — the same slot as the colophon, which it covered
+outright, and 8px into the legend above it. The collision only appears with a
+map filter active, which is why the 168px legend offset verified clean when it
+was set.
+
+### The masthead date wrapped into the search bar below 380px
+
+`Public records · Buffalo, N.Y. · refreshed 2026-08-08` is ~345px of IBM Plex
+Mono at 10.5px. At 390px it fits the 362px content box with 17px to spare; at
+360px the box is 332px and the line wraps to 30px tall, spanning y 40–71.
+`#search-row` starts at y 62 with an opaque `var(--paper)` background, so the
+second row was half-covered and read as a stray "08" under the title.
+
+### The "Open" pill on phones was never visible in either state that showed it
+
+`#reopen-panel` is `bottom: 8px` at `z-index: 25`; `#panel` is `z-index: 30`
+and reaches `bottom: 0` at 120px (peek) or 60px (`.hidden`). The pill's box
+(807–836 on an 844px screen) falls inside the sheet in both cases —
+`elementFromPoint` at its centre returned the panel's content, not the button.
+The CSS force-shows it at peek and the JS relabels it "▴ Open" on every snap
+to peek, so both halves were maintaining a control nobody could see.

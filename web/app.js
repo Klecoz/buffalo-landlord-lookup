@@ -1002,7 +1002,10 @@ function updateFilterChip() {
     return;
   }
   const { label, count } = state.mapFilter;
-  chip.innerHTML = `Showing only <strong>${escapeHtml(label)}</strong> <span class="count">· ${count} parcel${count === 1 ? "" : "s"}</span> <span class="clear">✕ Clear</span>`;
+  // The label is the only part allowed to ellipsise. Left as one text run the
+  // chip truncated mid-name and took "✕ Clear" off-screen with it, leaving no
+  // visible way out of a filter.
+  chip.innerHTML = `<span class="filter-chip-label">Showing only <strong>${escapeHtml(label)}</strong> <span class="count">· ${count} parcel${count === 1 ? "" : "s"}</span></span><span class="clear">✕ Clear</span>`;
   chip.classList.remove("hidden");
 }
 
@@ -1521,7 +1524,13 @@ async function loadMeta() {
     $("#meta-info").textContent =
       `Refreshed ${date} · ${(state.meta.parcels ?? 0).toLocaleString()} parcels · ${(state.meta.owners ?? 0).toLocaleString()} owners${c311Note}`;
     const issueEl = $("#issue-date");
-    if (issueEl && date) issueEl.textContent = `Public records · Buffalo, N.Y. · refreshed ${date}`;
+    // "Buffalo, N.Y." is its own span so phones can drop it: at 360px the full
+    // line wrapped and its second row was clipped by the search bar, and the
+    // title directly above it already says Buffalo.
+    if (issueEl && date) {
+      issueEl.innerHTML =
+        `Public records · <span class="masthead-place">Buffalo, N.Y. · </span>refreshed ${escapeHtml(date)}`;
+    }
   } catch {
     $("#meta-info").textContent = "Refresh date unknown";
   }
