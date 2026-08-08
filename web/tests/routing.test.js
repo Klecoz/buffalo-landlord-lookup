@@ -346,3 +346,38 @@ describe('parcel selection is released by the owner and operator views', () => {
     expect(t.state.selectedId).toBe('parcel-123')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Lazy-load race — a slow owner fetch resolving after the user had moved on
+// repainted the panel and rewrote the URL back to the owner route.
+// ---------------------------------------------------------------------------
+
+describe('view token guards a slow fetch', () => {
+  it('drops an owner response that lost the race to a newer operator view', async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('/owners/')) {
+        return sleep(40).then(() => ({
+          ok: true, status: 200,
+          json: vi.fn().mockResolvedValue({ owner_display: 'Slow Owner', properties: [] }),
+        }))
+      }
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: vi.fn().mockResolvedValue({
+          operator_label: 'Fast Operator', operator_slug: 'fast-op',
+          mailing_address: 'A', owners: [], properties: [], total_properties: 0,
+        }),
+      })
+    })
+
+    const slow = window.openPortfolio('slow-owner')
+    await window.openOperator('fast-op')
+    await slow
+
+    expect(document.getElementById('panel-content').textContent).toContain('Fast Operator')
+    expect(document.getElementById('panel-content').textContent).not.toContain('Slow Owner')
+    expect(t.state.lastOperator).not.toBeNull()
+    expect(t.state.lastPortfolio).toBeNull()
+  })
+})

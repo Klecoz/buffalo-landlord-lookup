@@ -23,9 +23,10 @@ const state = {
   mapFilter: null,               // { kind: "owner"|"operator", slug, label, count } | null
 };
 
-// Bumped by every navigation into a parcel view. The view captures it and
-// bails at every resume point where it no longer matches, so a stale async
-// step can't paint over a newer view.
+// Bumped by every navigation into a view (parcel, owner, operator). Each async
+// view captures it and bails at every resume point where it no longer matches,
+// so a slow fetch that resolves after the user has moved on can't paint over
+// the newer view or rewrite the URL back to itself.
 let _viewToken = 0;
 
 // ---------- helpers ----------
@@ -718,11 +719,14 @@ function applyDossierFilters(target) {
 }
 
 window.openPortfolio = async function (slug, opts = {}) {
+  const myToken = ++_viewToken;
   try {
     const r = await fetch(`${DATA_BASE}/owners/${slug}.json`);
+    if (myToken !== _viewToken) return;
     if (r.status === 404) { showMissingRecord("owner"); return; }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const portfolio = await r.json();
+    if (myToken !== _viewToken) return;
     portfolio._slug = slug;  // attach slug for the highlight toggle
     state.lastPortfolio = portfolio;
     state.lastOperator = null;
@@ -739,6 +743,7 @@ window.openPortfolio = async function (slug, opts = {}) {
       history.replaceState(null, "", target);
     }
   } catch (e) {
+    if (myToken !== _viewToken) return;
     showPanel(`<p class="error">Couldn't load that owner's portfolio.</p>`);
   }
 };
@@ -1194,11 +1199,14 @@ function renderAuditDisclosure(op) {
 
 // ---------- operator view ----------
 window.openOperator = async function (slug, opts = {}) {
+  const myToken = ++_viewToken;
   try {
     const r = await fetch(`${DATA_BASE}/operators/${slug}.json`);
+    if (myToken !== _viewToken) return;
     if (r.status === 404) { showMissingRecord("operator"); return; }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const op = await r.json();
+    if (myToken !== _viewToken) return;
     state.lastOperator = op;
     state.lastPortfolio = null;
     state.selectedId = null;   // see the note in openPortfolio
@@ -1213,6 +1221,7 @@ window.openOperator = async function (slug, opts = {}) {
       history.replaceState(null, "", target);
     }
   } catch (e) {
+    if (myToken !== _viewToken) return;
     showPanel(`<p class="error">Couldn't load that operator.</p>`);
   }
 };

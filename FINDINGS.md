@@ -467,3 +467,15 @@ transport failure and says the record isn't in the current dataset.
 `applyHashRoute` skips `selectParcel` when the routed id already matches it.
 Going parcel → owner → Back therefore restored the `#/parcel/` URL while the
 panel still showed the portfolio. Both loaders now release the selection.
+
+### A slow owner fetch could clobber a newer operator view
+
+`openPortfolio` and `openOperator` awaited a fetch with no guard, so on a slow
+connection the *earlier* request could resolve last and repaint the panel,
+null out `state.lastOperator`, and rewrite the URL back to its own route.
+Reproduced by delaying `/owners/` by 700ms and navigating owner → operator.
+
+`selectParcel` already captured a token (`_selectParcelToken`) but never
+compared it after awaiting — the guard was dead code. One module-level
+`_viewToken` now covers all three views and is compared at every resume
+point.

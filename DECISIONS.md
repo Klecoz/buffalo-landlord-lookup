@@ -2,6 +2,20 @@
 
 Choices made and why, with rejected alternatives. Newest first.
 
+## 2026-08-08 — One view token guards all three async views
+
+A single module-level `_viewToken`, bumped on entry to `selectParcel`,
+`openPortfolio`, and `openOperator` and compared after every await. A stale
+resume returns silently.
+
+Rejected: `AbortController` per view. It would need plumbing through three
+fetch sites and still wouldn't cover the non-fetch resume points
+(`loadDossiers`, the map-idle wait), so the token comparison would have to
+exist anyway.
+
+Sharing one counter across all three views is deliberate: navigating to an
+owner should cancel a pending parcel selection, which is what the shared
+counter gives for free.
 ## 2026-08-08 — Deep-linked parcels are found via the address index
 
 `selectParcel` falls back to the centroid in `state.addressIndex` and
