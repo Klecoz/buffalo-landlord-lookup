@@ -17,3 +17,6 @@ pipeline/htmlcov/
 .coverage
 # vitest config HMR leftover artifacts
 web/vitest.config.js.timestamp-*.mjs
+
+# Playwright MCP screenshot scratch (recreated every browser session)
+.playwright-mcp/
